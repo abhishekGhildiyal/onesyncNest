@@ -1,0 +1,10 @@
+const path = require('path');
+
+module.exports = {
+  'config': path.resolve('database', 'config.js'),
+  'models-path': path.resolve('src', 'models'), // Pointing to where we will put entities if we centralized, or typically just for CLI reference. 
+  // Since we use sequlize-typescript in modules, models-path for CLI might not be as useful unless we want it to generate models there.
+  // But for running migrations, it mainly needs config and migrations path.
+  'seeders-path': path.resolve('database', 'seeders'),
+  'migrations-path': path.resolve('database', 'migrations')
+};
