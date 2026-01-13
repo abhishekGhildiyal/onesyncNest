@@ -1,48 +1,23 @@
-import { Injectable, BadRequestException, Inject } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import { Brand } from '../products/entities/brand.entity';
-import { ProductList } from '../products/entities/product-list.entity';
-import { Variant } from '../products/entities/variant.entity';
-import { User } from '../users/entities/user.entity';
-import { Role } from '../users/entities/role.entity';
-import { UserStoreMapping } from '../users/entities/user-store-mapping.entity';
-import { Store } from '../users/entities/store.entity';
-import { AccessPackageOrder } from '../products/entities/access-package-order.entity';
-import { AccessPackageBrand } from '../products/entities/access-package-brand.entity';
-import { AccessPackageBrandItems } from '../products/entities/access-package-brand-items.entity';
-import { AccessPackageBrandItemsQty } from '../products/entities/access-package-brand-item-qty.entity';
-import { AccessPackageBrandItemsCapacity } from '../products/entities/access-package-brand-item-capacity.entity';
-import { AccessPackageCustomer } from '../products/entities/access-package-customer.entity';
-import { PackageCustomer } from '../packages/entities/package-customer.entity';
-import { PackageOrder } from '../packages/entities/package-order.entity';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Op, Sequelize } from 'sequelize';
+import { PackageRepository } from 'src/db/repository/package.repository';
+import { ProductRepository } from 'src/db/repository/product.repository';
+import { BRAND_STATUS, PACKAGE_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
-import { BRAND_STATUS, BRAND_TYPE, PACKAGE_STATUS } from '../../common/constants/enum';
-import { ROLES } from '../../common/constants/permissions';
-import { Op, Sequelize, Transaction, fn, col } from 'sequelize';
+import {
+  generateAlphaNumericPassword,
+  hashPasswordMD5,
+} from '../../common/helpers/hash.helper';
 import { generateOrderId } from '../../common/helpers/order-generator.helper';
 import { sortSizes } from '../../common/helpers/sort-sizes.helper';
-import { generateAlphaNumericPassword, hashPasswordMD5 } from '../../common/helpers/hash.helper';
 import { MailService } from '../mail/mail.service';
 import { SocketGateway } from '../socket/socket.gateway';
 
 @Injectable()
 export class BrandsService {
   constructor(
-    @InjectModel(Brand) private brandModel: typeof Brand,
-    @InjectModel(ProductList) private productListModel: typeof ProductList,
-    @InjectModel(Variant) private variantModel: typeof Variant,
-    @InjectModel(User) private userModel: typeof User,
-    @InjectModel(Role) private roleModel: typeof Role,
-    @InjectModel(UserStoreMapping) private userStoreMappingModel: typeof UserStoreMapping,
-    @InjectModel(Store) private storeModel: typeof Store,
-    @InjectModel(AccessPackageOrder) private accessPackageOrderModel: typeof AccessPackageOrder,
-    @InjectModel(AccessPackageBrand) private accessPackageBrandModel: typeof AccessPackageBrand,
-    @InjectModel(AccessPackageBrandItems) private accessPackageBrandItemsModel: typeof AccessPackageBrandItems,
-    @InjectModel(AccessPackageBrandItemsQty) private accessPackageBrandItemsQtyModel: typeof AccessPackageBrandItemsQty,
-    @InjectModel(AccessPackageBrandItemsCapacity) private accessPackageBrandItemsCapacityModel: typeof AccessPackageBrandItemsCapacity,
-    @InjectModel(AccessPackageCustomer) private accessPackageCustomerModel: typeof AccessPackageCustomer,
-    @InjectModel(PackageCustomer) private packageCustomerModel: typeof PackageCustomer,
-    @InjectModel(PackageOrder) private packageOrderModel: typeof PackageOrder,
+    private readonly pkgRepo: PackageRepository,
+    private readonly productRepo: ProductRepository,
     private mailService: MailService,
     private socketGateway: SocketGateway,
     @Inject('SEQUELIZE') private sequelize: Sequelize,
@@ -71,7 +46,7 @@ export class BrandsService {
       const sortOrder = sort?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
 
       // ✅ Step 1: Fetch all active brands (camelCase attributes returned)
-      const brands = await this.brandModel.findAll({
+      const brands = await this.productRepo.brandModel.findAll({
         where: whereCondition,
         order: [['brandName', sortOrder]],
         attributes: ['id', 'brandName', 'type'],
@@ -88,7 +63,7 @@ export class BrandsService {
       const brandIds = brands.map((b) => b.id);
 
       // ✅ Step 2: Fetch products under these brands
-      const products = await this.productListModel.findAll({
+      const products = await this.productRepo.productListModel.findAll({
         where: { brand_id: { [Op.in]: brandIds } },
         attributes: ['product_id', 'brand_id', 'itemName'],
       });
@@ -104,7 +79,7 @@ export class BrandsService {
       const productIds = products.map((p) => p.product_id);
 
       // ✅ Step 3: Fetch active variants for these products
-      const variants = await this.variantModel.findAll({
+      const variants = await this.productRepo.variantModel.findAll({
         where: {
           productId: { [Op.in]: productIds },
           status: 1,
@@ -117,14 +92,19 @@ export class BrandsService {
       const validProductIds = new Set(variants.map((v) => v.productId));
 
       // ✅ Step 4: Filter products -> only keep ones with valid variants
-      const filteredProducts = products.filter((p) => validProductIds.has(p.product_id));
+      const filteredProducts = products.filter((p) =>
+        validProductIds.has(p.product_id),
+      );
 
       // Group products by brandId
-      const productsByBrand = filteredProducts.reduce((acc: any, product: any) => {
-        if (!acc[product.brand_id]) acc[product.brand_id] = [];
-        acc[product.brand_id].push(product);
-        return acc;
-      }, {});
+      const productsByBrand = filteredProducts.reduce(
+        (acc: any, product: any) => {
+          if (!acc[product.brand_id]) acc[product.brand_id] = [];
+          acc[product.brand_id].push(product);
+          return acc;
+        },
+        {},
+      );
 
       // ✅ Step 5: Group brands alphabetically, excluding empty ones
       const grouped = brands.reduce((acc: any, brand: any) => {
@@ -132,10 +112,15 @@ export class BrandsService {
         if (items.length > 0) {
           // Sort products inside brand
           items.sort((a: any, b: any) =>
-            (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()),
+            (a.itemName || '')
+              .toLowerCase()
+              .localeCompare((b.itemName || '').toLowerCase()),
           );
 
-          const firstChar = (brand.brandName || '').trim().charAt(0).toUpperCase();
+          const firstChar = (brand.brandName || '')
+            .trim()
+            .charAt(0)
+            .toUpperCase();
           if (!acc[firstChar]) acc[firstChar] = [];
 
           acc[firstChar].push({
@@ -156,8 +141,12 @@ export class BrandsService {
       const sortedData = sortedKeys.reduce((acc: any, key) => {
         grouped[key].sort((a: any, b: any) =>
           sortOrder === 'ASC'
-            ? (a.brandName || '').toLowerCase().localeCompare((b.brandName || '').toLowerCase())
-            : (b.brandName || '').toLowerCase().localeCompare((a.brandName || '').toLowerCase()),
+            ? (a.brandName || '')
+                .toLowerCase()
+                .localeCompare((b.brandName || '').toLowerCase())
+            : (b.brandName || '')
+                .toLowerCase()
+                .localeCompare((a.brandName || '').toLowerCase()),
         );
 
         acc[key] = grouped[key];
@@ -213,7 +202,9 @@ export class BrandsService {
       };
     } catch (err) {
       console.log(err);
-      throw err instanceof BadRequestException ? err : new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw err instanceof BadRequestException
+        ? err
+        : new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
@@ -296,10 +287,18 @@ export class BrandsService {
         const variantMap = new Map();
         for (const variant of productVariants) {
           const size = (variant.option1Value || 'unknown').trim();
-          variantMap.set(size, (variantMap.get(size) || 0) + (variant.quantity || 0));
+          variantMap.set(
+            size,
+            (variantMap.get(size) || 0) + (variant.quantity || 0),
+          );
         }
 
-        const sizeAndQuantity = sortSizes(Array.from(variantMap.entries()).map(([size, quantity]) => ({ size, quantity })));
+        const sizeAndQuantity = sortSizes(
+          Array.from(variantMap.entries()).map(([size, quantity]) => ({
+            size,
+            quantity,
+          })),
+        );
 
         grouped[normalizedBrandName].push({
           itemName: product.itemName,
@@ -315,7 +314,11 @@ export class BrandsService {
 
       // ✅ Sort products inside each brand
       for (const normBrand in grouped) {
-        grouped[normBrand].sort((a: any, b: any) => (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()));
+        grouped[normBrand].sort((a: any, b: any) =>
+          (a.itemName || '')
+            .toLowerCase()
+            .localeCompare((b.itemName || '').toLowerCase()),
+        );
       }
 
       // ✅ Sort brands alphabetically & rename with display name
@@ -357,7 +360,14 @@ export class BrandsService {
           store_id: storeId,
           brand_id: { [Op.in]: brandIds },
         },
-        attributes: ['product_id', 'itemName', 'image', 'brand_id', 'type', 'skuNumber'],
+        attributes: [
+          'product_id',
+          'itemName',
+          'image',
+          'brand_id',
+          'type',
+          'skuNumber',
+        ],
         raw: true,
       });
 
@@ -408,10 +418,18 @@ export class BrandsService {
         const variantMap = new Map();
         for (const variant of productVariants) {
           const size = (variant.option1Value || 'unknown').trim();
-          variantMap.set(size, (variantMap.get(size) || 0) + (variant.quantity || 0));
+          variantMap.set(
+            size,
+            (variantMap.get(size) || 0) + (variant.quantity || 0),
+          );
         }
 
-        const sizeAndQuantity = sortSizes(Array.from(variantMap.entries()).map(([size, quantity]) => ({ size, quantity })));
+        const sizeAndQuantity = sortSizes(
+          Array.from(variantMap.entries()).map(([size, quantity]) => ({
+            size,
+            quantity,
+          })),
+        );
 
         const productObj = {
           name: product.itemName || 'Unnamed',
@@ -450,22 +468,30 @@ export class BrandsService {
 
       // --- Sort Brand Arrays ---
       for (const brand in groupedByBrand) {
-        groupedByBrand[brand].sort((a: any, b: any) => (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()));
+        groupedByBrand[brand].sort((a: any, b: any) =>
+          (a.itemName || '')
+            .toLowerCase()
+            .localeCompare((b.itemName || '').toLowerCase()),
+        );
       }
 
       // --- Sort Brand→Type Arrays, "-" type last ---
       const sortedBrandTypeData: any = {};
       for (const brand in groupedByBrandAndType) {
-        const sortedTypes = Object.keys(groupedByBrandAndType[brand]).sort((a, b) => {
-          if (a === '-' || a.trim() === '') return 1; // push "-" last
-          if (b === '-' || b.trim() === '') return -1;
-          return a.localeCompare(b);
-        });
+        const sortedTypes = Object.keys(groupedByBrandAndType[brand]).sort(
+          (a, b) => {
+            if (a === '-' || a.trim() === '') return 1; // push "-" last
+            if (b === '-' || b.trim() === '') return -1;
+            return a.localeCompare(b);
+          },
+        );
 
         const sortedTypeObj: any = {};
         for (const type of sortedTypes) {
           groupedByBrandAndType[brand][type].sort((a: any, b: any) =>
-            (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase())
+            (a.itemName || '')
+              .toLowerCase()
+              .localeCompare((b.itemName || '').toLowerCase()),
           );
           sortedTypeObj[type] = groupedByBrandAndType[brand][type];
         }
@@ -512,22 +538,25 @@ export class BrandsService {
       if (!Array.isArray(brandIds) || brandIds.length === 0) {
         throw new BadRequestException('brandIds array is required.');
       }
-      
+
       // Fallback if orderId is missing
-      if(!orderId) {
-         // This might happen if body structure is different, handle appropriately
-         // For now proceeding, logic might fail if Order check is critical
+      if (!orderId) {
+        // This might happen if body structure is different, handle appropriately
+        // For now proceeding, logic might fail if Order check is critical
       }
 
       // --- Verify Order
       if (orderId) {
-          const packageOrderData = await this.accessPackageOrderModel.findByPk(orderId, {
+        const packageOrderData = await this.accessPackageOrderModel.findByPk(
+          orderId,
+          {
             attributes: ['status'],
-          });
+          },
+        );
 
-          if (!packageOrderData) {
-            throw new BadRequestException(AllMessages.PAKG_NF);
-          }
+        if (!packageOrderData) {
+          throw new BadRequestException(AllMessages.PAKG_NF);
+        }
       }
 
       // --- Relations
@@ -535,7 +564,14 @@ export class BrandsService {
         {
           model: this.productListModel,
           as: 'products',
-          attributes: ['product_id', 'itemName', 'image', 'skuNumber', 'type', 'brand_id'],
+          attributes: [
+            'product_id',
+            'itemName',
+            'image',
+            'skuNumber',
+            'type',
+            'brand_id',
+          ],
           include: [
             {
               model: this.brandModel,
@@ -599,7 +635,7 @@ export class BrandsService {
             demand: 0,
             shortage: 0,
             receivedQuantity: 0,
-          }))
+          })),
         );
 
         const productObj = {
@@ -637,14 +673,20 @@ export class BrandsService {
 
       // --- Sort Brand Arrays
       for (const brand in groupedByBrand) {
-        groupedByBrand[brand].sort((a: any, b: any) => (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()));
+        groupedByBrand[brand].sort((a: any, b: any) =>
+          (a.itemName || '')
+            .toLowerCase()
+            .localeCompare((b.itemName || '').toLowerCase()),
+        );
       }
 
       // --- Sort Brand → Type Arrays
       for (const brand in groupedByBrandAndType) {
         for (const type in groupedByBrandAndType[brand]) {
           groupedByBrandAndType[brand][type].sort((a: any, b: any) =>
-            (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase())
+            (a.itemName || '')
+              .toLowerCase()
+              .localeCompare((b.itemName || '').toLowerCase()),
           );
         }
       }
@@ -675,8 +717,7 @@ export class BrandsService {
           groupedByBrandAndType: sortedBrandTypeData,
         },
       };
-    } catch (err) {
-    }
+    } catch (err) {}
   }
 
   /**
@@ -694,17 +735,33 @@ export class BrandsService {
         const linkedCustomers = await this.packageOrderModel.findAll({
           where: { store_id: user.storeId },
           attributes: ['id'],
-          include: [{ model: this.packageCustomerModel, as: 'customers', attributes: ['customer_id'] }],
+          include: [
+            {
+              model: this.packageCustomerModel,
+              as: 'customers',
+              attributes: ['customer_id'],
+            },
+          ],
         });
 
         const accessCustomers = await this.accessPackageOrderModel.findAll({
           where: { store_id: user.storeId },
           attributes: ['id'],
-          include: [{ model: this.accessPackageCustomerModel, as: 'customers', attributes: ['customer_id'] }],
+          include: [
+            {
+              model: this.accessPackageCustomerModel,
+              as: 'customers',
+              attributes: ['customer_id'],
+            },
+          ],
         });
 
-        const linkedIds = linkedCustomers.flatMap((c) => c.customers.map((cc) => cc.customer_id));
-        const accessIds = accessCustomers.flatMap((c) => c.customers.map((cc) => cc.customer_id));
+        const linkedIds = linkedCustomers.flatMap((c) =>
+          c.customers.map((cc) => cc.customer_id),
+        );
+        const accessIds = accessCustomers.flatMap((c) =>
+          c.customers.map((cc) => cc.customer_id),
+        );
 
         // Make unique list
         const combinedIds = Array.from(new Set([...linkedIds, ...accessIds]));
@@ -792,7 +849,9 @@ export class BrandsService {
       });
 
       if (AccessPackageName) {
-        throw new BadRequestException('Access list with same name already exists.');
+        throw new BadRequestException(
+          'Access list with same name already exists.',
+        );
       }
 
       const accessPackageOrder = await this.accessPackageOrderModel.create(
@@ -808,7 +867,7 @@ export class BrandsService {
           status: PACKAGE_STATUS.ACCESS,
           packageName,
         },
-        { transaction: t }
+        { transaction: t },
       );
 
       const brandIds = brands.map((b) => b.brand_id).filter(Boolean);
@@ -827,13 +886,18 @@ export class BrandsService {
           brand_id: b.brand_id,
         }));
 
-      const accessPackageBrands = await this.accessPackageBrandModel.bulkCreate(brandPayload, {
-        transaction: t,
-        returning: true,
-      });
+      const accessPackageBrands = await this.accessPackageBrandModel.bulkCreate(
+        brandPayload,
+        {
+          transaction: t,
+          returning: true,
+        },
+      );
 
       const brandIdToPkgBrandId = new Map();
-      accessPackageBrands.forEach((b) => brandIdToPkgBrandId.set(b.brand_id, b.id));
+      accessPackageBrands.forEach((b) =>
+        brandIdToPkgBrandId.set(b.brand_id, b.id),
+      );
 
       for (const brand of brands) {
         if (!brandIdSet.has(brand.brand_id)) continue;
@@ -859,7 +923,7 @@ export class BrandsService {
           product_id: r.product_id,
           quantity: r.quantity,
         })),
-        { transaction: t, returning: true }
+        { transaction: t, returning: true },
       );
 
       await t.commit();
@@ -893,11 +957,16 @@ export class BrandsService {
             {
               model: this.storeModel,
               as: 'store',
-              attributes: ['store_code', 'store_name', 'store_id', 'store_icon'],
+              attributes: [
+                'store_code',
+                'store_name',
+                'store_id',
+                'store_icon',
+              ],
             },
           ],
           transaction: t,
-        }
+        },
       );
 
       if (!existingPackage) {
@@ -907,15 +976,19 @@ export class BrandsService {
       // Step 1: Fetch existing users
       const existingUsers = await this.userModel.findAll({
         where: {
-          [Op.or]: customers.map(email => ({
-            email: { [Op.iLike]: email }
-          }))
+          [Op.or]: customers.map((email) => ({
+            email: { [Op.iLike]: email },
+          })),
         },
         transaction: t,
       });
 
-      const emailToUserMap = new Map(existingUsers.map((u) => [u.email.toLowerCase(), u]));
-      const newUserEmails = customers.filter((email) => !emailToUserMap.has(email.toLowerCase()));
+      const emailToUserMap = new Map(
+        existingUsers.map((u) => [u.email.toLowerCase(), u]),
+      );
+      const newUserEmails = customers.filter(
+        (email) => !emailToUserMap.has(email.toLowerCase()),
+      );
 
       // Step 2: Create new users
       const generatedPassword = generateAlphaNumericPassword();
@@ -932,7 +1005,9 @@ export class BrandsService {
           transaction: t,
           returning: true,
         });
-        createdUsers.forEach((user) => emailToUserMap.set(user.email.toLowerCase(), user));
+        createdUsers.forEach((user) =>
+          emailToUserMap.set(user.email.toLowerCase(), user),
+        );
       }
 
       // Step 3: Get or create Consumer role
@@ -972,9 +1047,16 @@ export class BrandsService {
         transaction: t,
       });
 
-      const existingSet = new Set(existingMappings.map((m) => `${m.userId}-${m.roleId}-${m.status}-${m.storeId}`));
+      const existingSet = new Set(
+        existingMappings.map(
+          (m) => `${m.userId}-${m.roleId}-${m.status}-${m.storeId}`,
+        ),
+      );
 
-      const newMappings = userMappings.filter((m) => !existingSet.has(`${m.userId}-${m.roleId}-${m.status}-${m.storeId}`));
+      const newMappings = userMappings.filter(
+        (m) =>
+          !existingSet.has(`${m.userId}-${m.roleId}-${m.status}-${m.storeId}`),
+      );
 
       if (newMappings.length > 0) {
         await this.userStoreMappingModel.bulkCreate(newMappings, {
@@ -983,22 +1065,30 @@ export class BrandsService {
       }
 
       // Step 6: Filter out already linked customers for this package
-      const alreadyLinkedCustomers = await this.accessPackageCustomerModel.findAll({
-        where: {
-          package_id: packageOrderId,
-          customer_id: packageCustomerEntries.map((e) => e.customer_id),
-        },
-        transaction: t,
-      });
-
-      const existingCustomerSet = new Set(alreadyLinkedCustomers.map((e) => `${e.package_id}-${e.customer_id}`));
-
-      const newPackageCustomerEntries = packageCustomerEntries.filter((e) => !existingCustomerSet.has(`${e.package_id}-${e.customer_id}`));
-
-      if (newPackageCustomerEntries.length > 0) {
-        await this.accessPackageCustomerModel.bulkCreate(newPackageCustomerEntries, {
+      const alreadyLinkedCustomers =
+        await this.accessPackageCustomerModel.findAll({
+          where: {
+            package_id: packageOrderId,
+            customer_id: packageCustomerEntries.map((e) => e.customer_id),
+          },
           transaction: t,
         });
+
+      const existingCustomerSet = new Set(
+        alreadyLinkedCustomers.map((e) => `${e.package_id}-${e.customer_id}`),
+      );
+
+      const newPackageCustomerEntries = packageCustomerEntries.filter(
+        (e) => !existingCustomerSet.has(`${e.package_id}-${e.customer_id}`),
+      );
+
+      if (newPackageCustomerEntries.length > 0) {
+        await this.accessPackageCustomerModel.bulkCreate(
+          newPackageCustomerEntries,
+          {
+            transaction: t,
+          },
+        );
       }
 
       existingPackage.showPrices = showPrices;
@@ -1029,9 +1119,12 @@ export class BrandsService {
     try {
       const { packageId, brands = [], packageName } = body;
 
-      const existingPackage = await this.accessPackageOrderModel.findByPk(packageId, {
-        transaction: t,
-      });
+      const existingPackage = await this.accessPackageOrderModel.findByPk(
+        packageId,
+        {
+          transaction: t,
+        },
+      );
 
       if (!existingPackage) {
         await t.rollback();
@@ -1056,7 +1149,9 @@ export class BrandsService {
 
         if (nameExists) {
           await t.rollback();
-          throw new BadRequestException('The package with this name already exists.');
+          throw new BadRequestException(
+            'The package with this name already exists.',
+          );
         }
 
         existingPackage.packageName = packageName;
@@ -1121,14 +1216,20 @@ export class BrandsService {
           });
           if (!brandExists) throw new Error(`Invalid brand_id: ${brand_id}`);
 
-          const accessPackageBrand = await this.accessPackageBrandModel.create({ package_id: packageId, brand_id }, { transaction: t });
+          const accessPackageBrand = await this.accessPackageBrandModel.create(
+            { package_id: packageId, brand_id },
+            { transaction: t },
+          );
 
           for (const item of items) {
             const { product_id, variants = [], mainVariants = [] } = item;
             if (!product_id) continue;
 
             const tempId = `${accessPackageBrand.id}-${product_id}-${Math.random()}`;
-            const totalQuantity = (variants || []).reduce((sum, v) => sum + (Number(v.maxCapacity) || 0), 0);
+            const totalQuantity = (variants || []).reduce(
+              (sum, v) => sum + (Number(v.maxCapacity) || 0),
+              0,
+            );
 
             itemRecords.push({
               tempId,
@@ -1166,13 +1267,16 @@ export class BrandsService {
             product_id: r.product_id,
             quantity: r.quantity,
           })),
-          { transaction: t, returning: true }
+          { transaction: t, returning: true },
         );
 
         const tempIdToItemId = new Map();
         for (const item of createdItems) {
           const match = itemRecords.find(
-            (r) => r.packageBrand_id === item.packageBrand_id && r.product_id === item.product_id && r.quantity === item.quantity
+            (r) =>
+              r.packageBrand_id === item.packageBrand_id &&
+              r.product_id === item.product_id &&
+              r.quantity === item.quantity,
           );
           if (match) {
             tempIdToItemId.set(match.tempId, item.id);
@@ -1188,9 +1292,12 @@ export class BrandsService {
           .filter((x) => !!x.item_id);
 
         if (finalVariantInsert.length) {
-          await this.accessPackageBrandItemsCapacityModel.bulkCreate(finalVariantInsert, {
-            transaction: t,
-          });
+          await this.accessPackageBrandItemsCapacityModel.bulkCreate(
+            finalVariantInsert,
+            {
+              transaction: t,
+            },
+          );
         }
 
         const finalSizeInsert = sizeQtyArr
@@ -1202,9 +1309,12 @@ export class BrandsService {
           .filter((x) => !!x.item_id);
 
         if (finalSizeInsert.length) {
-          await this.accessPackageBrandItemsQtyModel.bulkCreate(finalSizeInsert, {
-            transaction: t,
-          });
+          await this.accessPackageBrandItemsQtyModel.bulkCreate(
+            finalSizeInsert,
+            {
+              transaction: t,
+            },
+          );
         }
       }
 
@@ -1294,31 +1404,36 @@ export class BrandsService {
       const { storeId } = user;
       const { package_id, emails = [] } = body;
 
-      const accessPackage = await this.accessPackageOrderModel.findByPk(package_id, {
-        include: [
-          {
-            model: this.accessPackageCustomerModel,
-            as: 'customers',
-            include: [
-              {
-                model: this.userModel,
-                as: 'customer',
-                attributes: ['id', 'email'],
-              },
-            ],
-          },
-          {
-            model: this.storeModel,
-            as: 'store',
-            attributes: ['store_name'],
-          },
-        ],
-        transaction: t,
-      });
+      const accessPackage = await this.accessPackageOrderModel.findByPk(
+        package_id,
+        {
+          include: [
+            {
+              model: this.accessPackageCustomerModel,
+              as: 'customers',
+              include: [
+                {
+                  model: this.userModel,
+                  as: 'customer',
+                  attributes: ['id', 'email'],
+                },
+              ],
+            },
+            {
+              model: this.storeModel,
+              as: 'store',
+              attributes: ['store_name'],
+            },
+          ],
+          transaction: t,
+        },
+      );
 
       if (!accessPackage) throw new BadRequestException('Package not found.');
 
-      const existingCustomerIds = accessPackage.customers.map((c) => c.customer_id);
+      const existingCustomerIds = accessPackage.customers.map(
+        (c) => c.customer_id,
+      );
 
       const storeName = accessPackage.store?.store_name;
 
@@ -1327,19 +1442,25 @@ export class BrandsService {
         transaction: t,
       });
 
-      if (!consumerRole) throw new BadRequestException('Consumer role not found.');
+      if (!consumerRole)
+        throw new BadRequestException('Consumer role not found.');
 
       const mailPayload: any[] = [];
 
       for (const email of emails) {
-        let user: any = accessPackage.customers.find((c) => c.customer?.email === email)?.customer;
+        let user: any = accessPackage.customers.find(
+          (c) => c.customer?.email === email,
+        )?.customer;
 
         // If user not in package customers, find by email
-        if(!user){
-             user = await this.userModel.findOne({where: {email: email}, transaction: t});
+        if (!user) {
+          user = await this.userModel.findOne({
+            where: { email: email },
+            transaction: t,
+          });
         }
 
-      let pswrd: string | null = null;
+        let pswrd: string | null = null;
         const isNewUser = !user;
 
         if (isNewUser) {
@@ -1352,7 +1473,7 @@ export class BrandsService {
               firstName: email.split('@')[0],
               password: hashed,
             },
-            { transaction: t }
+            { transaction: t },
           );
         }
 
@@ -1371,7 +1492,7 @@ export class BrandsService {
               roleId: consumerRole.roleId,
               status: 1,
             },
-            { transaction: t }
+            { transaction: t },
           );
         }
 
@@ -1381,7 +1502,7 @@ export class BrandsService {
               package_id,
               customer_id: user.id,
             },
-            { transaction: t }
+            { transaction: t },
           );
         }
 
@@ -1402,7 +1523,10 @@ export class BrandsService {
 
       // Send emails
       // Implementation pending - using dummy log for now
-      console.log('Sending emails to:', mailPayload.map(m => m.to));
+      console.log(
+        'Sending emails to:',
+        mailPayload.map((m) => m.to),
+      );
 
       return {
         success: true,

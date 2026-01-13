@@ -60,10 +60,10 @@ export class AuthGuard implements CanActivate {
       throw new BadRequestException('Invalid userId format.');
     }
 
-    console.log('[AUTH] Headers:', { userId, storeId, roleId, token });
+    // console.log('[AUTH] Headers:', { userId, storeId, roleId, token });
 
     // 3️⃣ Fetch user mappings from DB using get() method
-    let userMappings;
+    let userMappings: any;
     try {
       userMappings = await this.mappingModel.findAll({
         where: { userId, status: 1 },

@@ -1,16 +1,27 @@
-import { Controller, Get, Post, Body, Query, Param, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 
 import { ApiTags } from '@nestjs/swagger';
+import { AuthGuard } from 'src/common/guards/auth.guard';
+import type { getUser } from 'src/common/interfaces/common/getUser';
 import { ProductsService } from './products.service';
 
 @ApiTags('ProductBrands')
-@Controller('productBrands')
+@Controller('product')
+@UseGuards(AuthGuard)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Get('brands')
-  allBrands(@GetUser() user: any = { storeId: 1 }, @Query() query: any) {
+  allBrands(@GetUser() user: getUser, @Query() query: any) {
     return this.productsService.allBrands(user, query);
   }
 
@@ -25,7 +36,10 @@ export class ProductsController {
   }
 
   @Post('createPackage')
-  createPackage(@GetUser() user: any = { storeId: 1, userId: 1 }, @Body() body: any) {
+  createPackage(
+    @GetUser() user: any = { storeId: 1, userId: 1 },
+    @Body() body: any,
+  ) {
     return this.productsService.createPackage(user, body);
   }
 

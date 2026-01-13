@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
+import { InventoryModule } from '../inventory/inventory.module';
 import {
   PackageBrand,
   PackageBrandItems,
@@ -57,6 +58,7 @@ import { OrdersService } from './orders.service';
       Store,
       ProductList,
       Variant,
+      InventoryModule,
     ]),
     ShopifyModule,
   ],

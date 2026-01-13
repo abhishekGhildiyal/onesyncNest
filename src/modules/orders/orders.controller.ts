@@ -6,19 +6,24 @@ import {
   Param,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 
 import { ApiTags } from '@nestjs/swagger';
+import { AuthGuard } from 'src/common/guards/auth.guard';
+import type { getUser } from 'src/common/interfaces/common/getUser';
+import * as DTO from './dto/orders.dto';
 import { OrdersService } from './orders.service';
 
 @ApiTags('Orders')
-@Controller('orders')
+@Controller('order')
+@UseGuards(AuthGuard)
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post('storeOrders')
-  storeOrders(@GetUser() user: any = { storeId: 1 }, @Body() body: any) {
+  storeOrders(@GetUser() user: getUser, @Body() body: DTO.StoreOrderDto) {
     return this.ordersService.storeOrders(user, body);
   }
 

@@ -32,3 +32,8 @@ export enum ORDER_ITEMS {
   ITM_RECEIVED = 'Item Received',
   NOT_RECEIVED = 'Not Received',
 }
+
+export const LABEL_TYPES = {
+  INVENTORY: 'inventory',
+  PRODUCT: 'product',
+};

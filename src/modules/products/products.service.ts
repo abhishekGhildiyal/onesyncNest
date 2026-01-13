@@ -1,13 +1,28 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { Brand, ProductList, Variant, AccessPackageOrder, AccessPackageBrand, AccessPackageBrandItems, AccessPackageCustomer, AccessPackageBrandItemsQty, AccessPackageBrandItemsCapacity } from './entities';
-import { User } from '../users/entities';
-import { BRAND_STATUS, PACKAGE_STATUS } from '../../common/constants/enum';
-import { AllMessages } from '../../common/constants/messages';
-import { sortSizes } from '../../common/helpers/sort-sizes.helper';
-import { generateOrderId } from '../../common/helpers/order-generator.helper';
 import { Op } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
+import { getUser } from 'src/common/interfaces/common/getUser';
+import { BRAND_STATUS, PACKAGE_STATUS } from '../../common/constants/enum';
+import { AllMessages } from '../../common/constants/messages';
+import { generateOrderId } from '../../common/helpers/order-generator.helper';
+import { sortSizes } from '../../common/helpers/sort-sizes.helper';
+import { User } from '../users/entities';
+import {
+  AccessPackageBrand,
+  AccessPackageBrandItems,
+  AccessPackageBrandItemsCapacity,
+  AccessPackageBrandItemsQty,
+  AccessPackageCustomer,
+  AccessPackageOrder,
+  Brand,
+  ProductList,
+  Variant,
+} from './entities';
 
 @Injectable()
 export class ProductsService {
@@ -15,17 +30,29 @@ export class ProductsService {
     @InjectModel(Brand) private brandModel: typeof Brand,
     @InjectModel(ProductList) private productModel: typeof ProductList,
     @InjectModel(Variant) private variantModel: typeof Variant,
-    @InjectModel(AccessPackageOrder) private accessOrderModel: typeof AccessPackageOrder,
-    @InjectModel(AccessPackageBrand) private accessBrandModel: typeof AccessPackageBrand,
-    @InjectModel(AccessPackageBrandItems) private accessBrandItemsModel: typeof AccessPackageBrandItems,
-    @InjectModel(AccessPackageCustomer) private accessCustomerModel: typeof AccessPackageCustomer,
-    @InjectModel(AccessPackageBrandItemsQty) private accessQtyModel: typeof AccessPackageBrandItemsQty,
-    @InjectModel(AccessPackageBrandItemsCapacity) private accessCapacityModel: typeof AccessPackageBrandItemsCapacity,
+    @InjectModel(AccessPackageOrder)
+    private accessOrderModel: typeof AccessPackageOrder,
+    @InjectModel(AccessPackageBrand)
+    private accessBrandModel: typeof AccessPackageBrand,
+    @InjectModel(AccessPackageBrandItems)
+    private accessBrandItemsModel: typeof AccessPackageBrandItems,
+    @InjectModel(AccessPackageCustomer)
+    private accessCustomerModel: typeof AccessPackageCustomer,
+    @InjectModel(AccessPackageBrandItemsQty)
+    private accessQtyModel: typeof AccessPackageBrandItemsQty,
+    @InjectModel(AccessPackageBrandItemsCapacity)
+    private accessCapacityModel: typeof AccessPackageBrandItemsCapacity,
     @InjectModel(User) private userModel: typeof User,
     private sequelize: Sequelize,
   ) {}
 
-  async allBrands(user: any, query: any) {
+  /**
+   * @description Fetch all brands
+   * @param user
+   * @param query
+   * @returns
+   */
+  async allBrands(user: getUser, query: any) {
     try {
       const { storeId } = user;
       const { search, sort = 'ASC' } = query;
@@ -41,6 +68,7 @@ export class ProductsService {
 
       const sortOrder = sort?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
 
+      // ✅ Step 1: Fetch all active brands (camelCase attributes returned)
       const brands = await this.brandModel.findAll({
         where: whereCondition,
         order: [['brandName', sortOrder]],
@@ -52,6 +80,8 @@ export class ProductsService {
       }
 
       const brandIds = brands.map((b) => b.id);
+
+      // ✅ Step 2: Fetch products under these brands
       const products = await this.productModel.findAll({
         where: { brand_id: { [Op.in]: brandIds } },
         attributes: ['product_id', 'brand_id', 'itemName'],
@@ -62,6 +92,8 @@ export class ProductsService {
       }
 
       const productIds = products.map((p) => p.product_id);
+
+      // ✅ Step 3: Fetch active variants for these products
       const variants = await this.variantModel.findAll({
         where: {
           product_id: { [Op.in]: productIds },
@@ -73,49 +105,81 @@ export class ProductsService {
       });
 
       const validProductIds = new Set(variants.map((v) => v.productId));
-      const filteredProducts = products.filter((p) => validProductIds.has(p.product_id));
 
+      // ✅ Step 4: Filter products -> only keep ones with valid variants
+      const filteredProducts = products.filter((p) =>
+        validProductIds.has(p.product_id),
+      );
+
+      // Group products by brandId
       const productsByBrand = filteredProducts.reduce((acc, product) => {
         if (!acc[product.brand_id]) acc[product.brand_id] = [];
         acc[product.brand_id].push(product);
         return acc;
       }, {});
 
+      // ✅ Step 5: Group brands alphabetically, excluding empty ones
       const grouped = brands.reduce((acc, brand) => {
         const items = productsByBrand[brand.id] || [];
         if (items.length > 0) {
-          items.sort((a, b) => (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()));
-          const firstChar = (brand.brandName || '').trim().charAt(0).toUpperCase();
+          // Sort products inside brand
+          items.sort((a, b) =>
+            (a.itemName || '')
+              .toLowerCase()
+              .localeCompare((b.itemName || '').toLowerCase()),
+          );
+          const firstChar = (brand.brandName || '')
+            .trim()
+            .charAt(0)
+            .toUpperCase();
           if (!acc[firstChar]) acc[firstChar] = [];
           acc[firstChar].push({
-            ...brand.toJSON(),
+            ...brand.toJSON(), // ensures plain object with camelCase keys
             products: items,
           });
         }
         return acc;
       }, {});
 
+      // ✅ Step 6: Sort brands alphabetically inside each group
+      // Apply sort order for groups (A..Z or Z..A)
       const sortedKeys = Object.keys(grouped).sort((a, b) =>
-        sortOrder === 'ASC' ? a.toLowerCase().localeCompare(b.toLowerCase()) : b.toLowerCase().localeCompare(a.toLowerCase()),
+        sortOrder === 'ASC'
+          ? a.toLowerCase().localeCompare(b.toLowerCase())
+          : b.toLowerCase().localeCompare(a.toLowerCase()),
       );
 
       const sortedData = sortedKeys.reduce((acc, key) => {
+        // Sort brands inside each group
         grouped[key].sort((a, b) =>
           sortOrder === 'ASC'
-            ? (a.brandName || '').toLowerCase().localeCompare((b.brandName || '').toLowerCase())
-            : (b.brandName || '').toLowerCase().localeCompare((a.brandName || '').toLowerCase()),
+            ? (a.brandName || '')
+                .toLowerCase()
+                .localeCompare((b.brandName || '').toLowerCase())
+            : (b.brandName || '')
+                .toLowerCase()
+                .localeCompare((a.brandName || '').toLowerCase()),
         );
         acc[key] = grouped[key];
         return acc;
       }, {});
 
-      return { success: true, message: AllMessages.FTCH_BRANDS, data: sortedData };
+      return {
+        success: true,
+        message: AllMessages.FTCH_BRANDS,
+        data: sortedData,
+      };
     } catch (err) {
       console.error(err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
+  /**
+   * @description Toggle brand type ("Public", "Private")
+   * @param body
+   * @returns
+   */
   async toggleType(body: any) {
     try {
       const { type, brandId, brandName } = body;
@@ -126,7 +190,8 @@ export class ProductsService {
         const existingBrand = await this.brandModel.findOne({
           where: { brandName, id: { [Op.ne]: brandId } },
         });
-        if (existingBrand) throw new BadRequestException('Brand name already exists.');
+        if (existingBrand)
+          throw new BadRequestException('Brand name already exists.');
         brand.brandName = brandName;
       }
 
@@ -135,7 +200,11 @@ export class ProductsService {
 
       return { success: true, message: AllMessages.BRAND_UPDT };
     } catch (err) {
-      if (err instanceof BadRequestException || err instanceof NotFoundException) throw err;
+      if (
+        err instanceof BadRequestException ||
+        err instanceof NotFoundException
+      )
+        throw err;
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
@@ -196,10 +265,18 @@ export class ProductsService {
         const variantMap = new Map();
         for (const variant of productVariants) {
           const size = (variant.option1Value || 'unknown').trim();
-          variantMap.set(size, (variantMap.get(size) || 0) + (variant.quantity || 0));
+          variantMap.set(
+            size,
+            (variantMap.get(size) || 0) + (variant.quantity || 0),
+          );
         }
 
-        const sizeAndQuantity = sortSizes(Array.from(variantMap.entries()).map(([size, quantity]) => ({ size, quantity })));
+        const sizeAndQuantity = sortSizes(
+          Array.from(variantMap.entries()).map(([size, quantity]) => ({
+            size,
+            quantity,
+          })),
+        );
 
         grouped[normalizedBrandName].push({
           name: product.itemName || 'Unnamed',
@@ -214,7 +291,11 @@ export class ProductsService {
       }
 
       for (const normBrand in grouped) {
-        grouped[normBrand].sort((a, b) => (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()));
+        grouped[normBrand].sort((a, b) =>
+          (a.itemName || '')
+            .toLowerCase()
+            .localeCompare((b.itemName || '').toLowerCase()),
+        );
       }
 
       const sortedData = Object.keys(grouped)
@@ -226,7 +307,11 @@ export class ProductsService {
           return acc;
         }, {});
 
-      return { success: true, message: AllMessages.FTCH_PRODUCTS, data: sortedData };
+      return {
+        success: true,
+        message: AllMessages.FTCH_PRODUCTS,
+        data: sortedData,
+      };
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
@@ -294,7 +379,11 @@ export class ProductsService {
       }
 
       await t.commit();
-      return { success: true, message: 'Package created successfully', data: pkg };
+      return {
+        success: true,
+        message: 'Package created successfully',
+        data: pkg,
+      };
     } catch (err) {
       await t.rollback();
       console.error(err);
@@ -333,7 +422,11 @@ export class ProductsService {
         ],
       });
 
-      return { success: true, message: 'Customers fetched successfully', data: customers };
+      return {
+        success: true,
+        message: 'Customers fetched successfully',
+        data: customers,
+      };
     } catch (err) {
       console.error(err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
@@ -344,7 +437,10 @@ export class ProductsService {
     const t = await this.sequelize.transaction();
     try {
       const { packageOrderId, customers = [], showPrices } = body;
-      const existingPackage = await this.accessOrderModel.findByPk(packageOrderId, { transaction: t });
+      const existingPackage = await this.accessOrderModel.findByPk(
+        packageOrderId,
+        { transaction: t },
+      );
       if (!existingPackage) throw new BadRequestException(AllMessages.PAKG_NF);
 
       // Implementation of linking logic... (as per legacy)
@@ -362,7 +458,9 @@ export class ProductsService {
     const t = await this.sequelize.transaction();
     try {
       const { packageId, brands = [], packageName } = body;
-      const existingPackage = await this.accessOrderModel.findByPk(packageId, { transaction: t });
+      const existingPackage = await this.accessOrderModel.findByPk(packageId, {
+        transaction: t,
+      });
       if (!existingPackage) throw new BadRequestException(AllMessages.PAKG_NF);
 
       if (packageName) {
@@ -384,9 +482,18 @@ export class ProductsService {
     try {
       const packageCustomers = await this.accessCustomerModel.findAll({
         where: { package_id: packageId },
-        include: [{ model: User, as: 'customer', attributes: ['id', 'email', 'firstName', 'lastName'] }],
+        include: [
+          {
+            model: User,
+            as: 'customer',
+            attributes: ['id', 'email', 'firstName', 'lastName'],
+          },
+        ],
       });
-      return { success: true, data: packageCustomers.map((c) => c.customer).filter(Boolean) };
+      return {
+        success: true,
+        data: packageCustomers.map((c) => c.customer).filter(Boolean),
+      };
     } catch (err) {
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
@@ -396,7 +503,10 @@ export class ProductsService {
     const t = await this.sequelize.transaction();
     try {
       const { package_id, customer_id } = body;
-      await this.accessCustomerModel.destroy({ where: { package_id, customer_id }, transaction: t });
+      await this.accessCustomerModel.destroy({
+        where: { package_id, customer_id },
+        transaction: t,
+      });
       await t.commit();
       return { success: true, message: AllMessages.ACCESS_REVOKED };
     } catch (err) {

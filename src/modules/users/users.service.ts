@@ -1,20 +1,32 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { User, ConsumerShippingAddress, Role, Store, UserStoreMapping, Permission } from './entities';
-import { PackageOrder, PackageCustomer, PackageBrand, PackageBrandItems } from '../packages/entities';
+import { Sequelize } from 'sequelize-typescript';
+import { PACKAGE_STATUS, PAYMENT_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
 import { ROLES } from '../../common/constants/permissions';
-import { PAYMENT_STATUS, PACKAGE_STATUS } from '../../common/constants/enum';
 import { compareMD5, hashPasswordMD5 } from '../../common/helpers/hash.helper';
-import { Sequelize } from 'sequelize-typescript';
-import { Op } from 'sequelize';
+import {
+  PackageBrand,
+  PackageBrandItems,
+  PackageCustomer,
+  PackageOrder,
+} from '../packages/entities';
+import {
+  ConsumerShippingAddress,
+  Permission,
+  Role,
+  User,
+  UserStoreMapping,
+} from './entities';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User) private userModel: typeof User,
-    @InjectModel(ConsumerShippingAddress) private shippingAddressModel: typeof ConsumerShippingAddress,
-    @InjectModel(UserStoreMapping) private mappingModel: typeof UserStoreMapping,
+    @InjectModel(ConsumerShippingAddress)
+    private shippingAddressModel: typeof ConsumerShippingAddress,
+    @InjectModel(UserStoreMapping)
+    private mappingModel: typeof UserStoreMapping,
     @InjectModel(Role) private roleModel: typeof Role,
     @InjectModel(Permission) private permissionModel: typeof Permission,
     private sequelize: Sequelize,
@@ -35,7 +47,16 @@ export class UsersService {
 
   async userSetting(body: any) {
     try {
-      const { userId, firstName, lastName, phnNo, oldPassword, newPassword, shippingAddress = [], billingAddress } = body;
+      const {
+        userId,
+        firstName,
+        lastName,
+        phnNo,
+        oldPassword,
+        newPassword,
+        shippingAddress = [],
+        billingAddress,
+      } = body;
 
       const user = await this.userModel.findOne({ where: { id: userId } });
 
@@ -48,7 +69,8 @@ export class UsersService {
       if (phnNo !== undefined) user.phnNo = phnNo;
 
       if (billingAddress) {
-        const { b_address, b_address2, b_country, b_city, b_state, b_zip } = billingAddress;
+        const { b_address, b_address2, b_country, b_city, b_state, b_zip } =
+          billingAddress;
         user.address = b_address;
         user.address2 = b_address2;
         user.country = b_country;
@@ -72,7 +94,17 @@ export class UsersService {
       if (Array.isArray(shippingAddress) && shippingAddress.length > 0) {
         let selectedSet = false;
         for (const ship of shippingAddress) {
-          let { label, address, address2, country, city, state, zip, selected, sameAddress } = ship;
+          let {
+            label,
+            address,
+            address2,
+            country,
+            city,
+            state,
+            zip,
+            selected,
+            sameAddress,
+          } = ship;
           if (selected && !selectedSet) {
             selectedSet = true;
           } else {
@@ -134,7 +166,9 @@ export class UsersService {
         where: { isSuperAdminPermission: false },
       });
 
-      const consumerPermissions = allPermissions.filter((p) => p.isConsumerPermission);
+      const consumerPermissions = allPermissions.filter(
+        (p) => p.isConsumerPermission,
+      );
       const permissions = allPermissions.filter((p) => !p.isConsumerPermission);
 
       return {
@@ -180,11 +214,15 @@ export class UsersService {
         throw new BadRequestException('User mapping for this store not found.');
       }
 
-      const validMappings = mappings.filter((m) => !restrictedRoles.includes(m.role.roleName));
+      const validMappings = mappings.filter(
+        (m) => !restrictedRoles.includes(m.role.roleName),
+      );
 
       if (!validMappings.length) {
         await t.rollback();
-        throw new BadRequestException('No valid mappings to update for this user.');
+        throw new BadRequestException(
+          'No valid mappings to update for this user.',
+        );
       }
 
       await Promise.all(
@@ -214,7 +252,15 @@ export class UsersService {
 
   async consumerList(body: any, storeId: number) {
     try {
-      const { status = [PACKAGE_STATUS.IN_PROGRESS, PACKAGE_STATUS.CLOSE, PACKAGE_STATUS.COMPLETED], page = 1, limit = 10 } = body;
+      const {
+        status = [
+          PACKAGE_STATUS.IN_PROGRESS,
+          PACKAGE_STATUS.CLOSE,
+          PACKAGE_STATUS.COMPLETED,
+        ],
+        page = 1,
+        limit = 10,
+      } = body;
 
       const Nlimit = parseInt(limit);
       const offset = (parseInt(page) - 1) * Nlimit;
@@ -231,7 +277,7 @@ export class UsersService {
               {
                 model: User,
                 as: 'customer',
-                attributes: ['id', 'firstName', 'lastName'],
+                attributes: ['userId', 'firstName', 'lastName'],
               },
             ],
           },
@@ -255,17 +301,24 @@ export class UsersService {
           success: true,
           message: 'No consumers found',
           data: [],
-          pagination: { total: 0, totalPages: 0, currentPage: page, perPage: Nlimit },
+          pagination: {
+            total: 0,
+            totalPages: 0,
+            currentPage: page,
+            perPage: Nlimit,
+          },
         };
       }
 
+      // Step 2: Group by consumer
       const consumerMap = new Map();
 
       packages.forEach((pkg) => {
-        pkg.customers.forEach((c) => {
+        pkg?.customers?.forEach((c) => {
           const user = c.customer;
           if (!user) return;
 
+          // ✅ calculate spend for this package **only if paymentStatus is confirmed**
           let packageSpend = 0;
           if (pkg.paymentStatus === PAYMENT_STATUS.CONFIRMED) {
             pkg.brands.forEach((brand) => {
@@ -290,11 +343,11 @@ export class UsersService {
           }
 
           const consumer = consumerMap.get(user.id);
-          consumer.totalSpend += packageSpend;
+          consumer.totalSpend += packageSpend; // only adds if paymentStatus === confirmed
           consumer.orders.push({
             package_id: pkg.id,
             order_id: pkg.order_id,
-            spend: packageSpend,
+            spend: packageSpend, // only non-zero if confirmed
           });
         });
       });
@@ -361,7 +414,17 @@ export class UsersService {
             attributes: [],
           },
         ],
-        attributes: ['id', 'firstName', 'lastName', 'address', 'city', 'state', 'zip', 'country', 'phnNo'],
+        attributes: [
+          'id',
+          'firstName',
+          'lastName',
+          'address',
+          'city',
+          'state',
+          'zip',
+          'country',
+          'phnNo',
+        ],
       });
 
       if (!consumer) {
