@@ -6,11 +6,14 @@ import {
   PrimaryKey,
   Table,
 } from 'sequelize-typescript';
+import { Brands } from '../../product/brand';
+import { PackageBrandItems } from './packageBrandItems';
+import { PackageOrder } from './packageOrder';
 
 @Table({
   timestamps: true,
 })
-export class PackageBrand extends Model<PackageBrand> {
+export class PackageBrand extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -41,4 +44,9 @@ export class PackageBrand extends Model<PackageBrand> {
     defaultValue: false,
   })
   selected: boolean;
+
+  // Association properties (defined in packageASSOCIATION.ts)
+  declare items?: PackageBrandItems[];
+  declare order?: PackageOrder;
+  declare brandData?: Brands;
 }

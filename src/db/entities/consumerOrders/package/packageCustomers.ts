@@ -6,11 +6,13 @@ import {
   PrimaryKey,
   Table,
 } from 'sequelize-typescript';
+import { User } from '../../user/user';
+import { PackageOrder } from './packageOrder';
 
 @Table({
   timestamps: true,
 })
-export class PackageCustomer extends Model<PackageCustomer> {
+export class PackageCustomer extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -34,4 +36,8 @@ export class PackageCustomer extends Model<PackageCustomer> {
     allowNull: false,
   })
   customer_id: number;
+
+  // Association properties (defined in packageASSOCIATION.ts)
+  declare order?: PackageOrder;
+  declare customer?: User;
 }

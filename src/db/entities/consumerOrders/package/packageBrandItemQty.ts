@@ -6,12 +6,13 @@ import {
   PrimaryKey,
   Table,
 } from 'sequelize-typescript';
+import { PackageBrandItems } from './packageBrandItems';
 
 @Table({
   freezeTableName: true,
   timestamps: true,
 })
-export class PackageBrandItemsQty extends Model<PackageBrandItemsQty> {
+export class PackageBrandItemsQty extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -59,4 +60,7 @@ export class PackageBrandItemsQty extends Model<PackageBrandItemsQty> {
     allowNull: true,
   })
   receivedQuantity: number;
+
+  // Association properties (defined in packageASSOCIATION.ts)
+  declare qtyItem?: PackageBrandItems;
 }

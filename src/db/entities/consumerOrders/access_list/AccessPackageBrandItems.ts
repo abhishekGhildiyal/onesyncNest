@@ -11,7 +11,7 @@ import { ORDER_ITEMS } from 'src/common/constants/enum';
 @Table({
   timestamps: true,
 })
-export class AccessPackageBrandItems extends Model<AccessPackageBrandItems> {
+export class AccessPackageBrandItems extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

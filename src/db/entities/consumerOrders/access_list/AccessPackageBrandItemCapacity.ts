@@ -10,7 +10,7 @@ import {
 @Table({
   timestamps: true,
 })
-export class AccessPackageBrandItemsCapacity extends Model<AccessPackageBrandItemsCapacity> {
+export class AccessPackageBrandItemsCapacity extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

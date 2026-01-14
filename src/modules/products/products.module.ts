@@ -1,23 +1,10 @@
 import { Module } from '@nestjs/common';
-import { SequelizeModule } from '@nestjs/sequelize';
-import { Brand, ProductList, Variant, AccessPackageOrder, AccessPackageBrand, AccessPackageBrandItems, AccessPackageCustomer, AccessPackageBrandItemsQty, AccessPackageBrandItemsCapacity } from './entities';
-import { ProductsService } from './products.service';
+import { DatabaseModule } from 'src/db/database.module';
 import { ProductsController } from './products.controller';
+import { ProductsService } from './products.service';
 
 @Module({
-  imports: [
-    SequelizeModule.forFeature([
-      Brand,
-      ProductList,
-      Variant,
-      AccessPackageOrder,
-      AccessPackageBrand,
-      AccessPackageBrandItems,
-      AccessPackageCustomer,
-      AccessPackageBrandItemsQty,
-      AccessPackageBrandItemsCapacity,
-    ]),
-  ],
+  imports: [DatabaseModule],
   providers: [ProductsService],
   controllers: [ProductsController],
   exports: [ProductsService],

@@ -1,13 +1,28 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { BrandsService } from './brands.service';
-import { BrandProductsDto, BrandUpdateDto, CreatePackageDto, LinkCustomerDto, UpdatePackageDto, RevokeAccessDto } from './dto/brands.dto';
-import { AuthGuard } from '../../common/guards/auth.guard';
-import { AgentGuard } from '../../common/guards/agent.guard';
-import { PermissionGuard } from '../../common/guards/permission.guard';
-import { PERMISSIONS } from '../../common/constants/permissions';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { RequiredPermissions } from 'src/common/decorators/permission.decorator';
+import type { getUser } from 'src/common/interfaces/common/getUser';
+import { PERMISSIONS } from '../../common/constants/permissions';
+import { AuthGuard } from '../../common/guards/auth.guard';
+import { PermissionGuard } from '../../common/guards/permission.guard';
+import { BrandsService } from './brands.service';
+import {
+  BrandProductsDto,
+  BrandUpdateDto,
+  CreatePackageDto,
+  LinkCustomerDto,
+  RevokeAccessDto,
+  UpdatePackageDto,
+} from './dto/brands.dto';
 
 @ApiTags('Brands')
 @Controller('brands')
@@ -19,7 +34,7 @@ export class BrandsController {
    * @description Fetch all brands with products
    */
   @Get()
-  async allBrands(@GetUser() user: any, @Query() query: any) {
+  async allBrands(@GetUser() user: getUser, @Query() query: any) {
     return this.brandsService.allBrands(user, query);
   }
 
@@ -35,7 +50,10 @@ export class BrandsController {
    * @description Get products by brand for packages
    */
   @Post('products')
-  async brandProducts(@GetUser() user: any, @Body() body: BrandProductsDto) {
+  async brandProducts(
+    @GetUser() user: getUser,
+    @Body() body: BrandProductsDto,
+  ) {
     return this.brandsService.brandProducts(user, body);
   }
 
@@ -43,7 +61,10 @@ export class BrandsController {
    * @description Get brand products for access list
    */
   @Post('products/access-list')
-  async brandProductsAccessList(@GetUser() user: any, @Body() body: BrandProductsDto) {
+  async brandProductsAccessList(
+    @GetUser() user: getUser,
+    @Body() body: BrandProductsDto,
+  ) {
     return this.brandsService.brandProductsAcessList(user, body);
   }
 
@@ -51,7 +72,10 @@ export class BrandsController {
    * @description Get consumer accessible brand products
    */
   @Post('consumer/products')
-  async getAccessPackageBrandProducts(@GetUser() user: any, @Body() body: any) {
+  async getAccessPackageBrandProducts(
+    @GetUser() user: getUser,
+    @Body() body: any,
+  ) {
     return this.brandsService.getAccessPackageBrandProducts(user, body);
   }
 
@@ -59,7 +83,7 @@ export class BrandsController {
    * @description Get all customers
    */
   @Get('customers')
-  async allCustomers(@GetUser() user: any, @Query() query: any) {
+  async allCustomers(@GetUser() user: getUser, @Query() query: any) {
     return this.brandsService.allCustomers(user, query);
   }
 
@@ -69,7 +93,10 @@ export class BrandsController {
   @Post('package')
   @UseGuards(PermissionGuard)
   @RequiredPermissions(PERMISSIONS.AccessOrder.name)
-  async createPackage(@GetUser() user: any, @Body() body: CreatePackageDto) {
+  async createPackage(
+    @GetUser() user: getUser,
+    @Body() body: CreatePackageDto,
+  ) {
     return this.brandsService.createPackage(user, body);
   }
 
@@ -79,7 +106,7 @@ export class BrandsController {
   @Post('package/link-customer')
   @UseGuards(PermissionGuard)
   @RequiredPermissions(PERMISSIONS.AccessOrder.name)
-  async linkCustomer(@GetUser() user: any, @Body() body: LinkCustomerDto) {
+  async linkCustomer(@GetUser() user: getUser, @Body() body: LinkCustomerDto) {
     return this.brandsService.linkCustomer(user, body);
   }
 
@@ -89,7 +116,10 @@ export class BrandsController {
   @Post('package/update')
   @UseGuards(PermissionGuard)
   @RequiredPermissions(PERMISSIONS.AccessOrder.name)
-  async updatePackage(@GetUser() user: any, @Body() body: UpdatePackageDto) {
+  async updatePackage(
+    @GetUser() user: getUser,
+    @Body() body: UpdatePackageDto,
+  ) {
     return this.brandsService.updatePackage(user, body);
   }
 

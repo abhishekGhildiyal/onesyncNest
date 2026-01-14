@@ -1,26 +1,12 @@
 import { Module } from '@nestjs/common';
-import { SequelizeModule } from '@nestjs/sequelize';
-import { Inventory, InventoryRequest, ConsumerInventory, ConsumerProductList, ConsumerProductVariant, ConsumerProductsMapping } from './entities';
-import { InventoryService } from './inventory.service';
+import { DatabaseModule } from 'src/db/database.module';
 import { InventoryController } from './inventory.controller';
-import { ProductList, Variant, Brand } from '../products/entities';
+import { InventoryService } from './inventory.service';
 
 @Module({
-  imports: [
-    SequelizeModule.forFeature([
-      Inventory,
-      InventoryRequest,
-      ConsumerInventory,
-      ConsumerProductList,
-      ConsumerProductVariant,
-      ConsumerProductsMapping,
-      ProductList,
-      Variant,
-      Brand,
-    ]),
-  ],
+  imports: [DatabaseModule],
   providers: [InventoryService],
   controllers: [InventoryController],
-  exports: [SequelizeModule, InventoryService],
+  exports: [InventoryService],
 })
 export class InventoryModule {}

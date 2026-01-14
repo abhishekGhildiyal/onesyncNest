@@ -1,40 +1,24 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
+import { getUser } from 'src/common/interfaces/common/getUser';
+import { PackageRepository } from 'src/db/repository/package.repository';
+import { UserRepository } from 'src/db/repository/user.repository';
 import { PACKAGE_STATUS, PAYMENT_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
 import { ROLES } from '../../common/constants/permissions';
 import { compareMD5, hashPasswordMD5 } from '../../common/helpers/hash.helper';
-import {
-  PackageBrand,
-  PackageBrandItems,
-  PackageCustomer,
-  PackageOrder,
-} from '../packages/entities';
-import {
-  ConsumerShippingAddress,
-  Permission,
-  Role,
-  User,
-  UserStoreMapping,
-} from './entities';
 
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectModel(User) private userModel: typeof User,
-    @InjectModel(ConsumerShippingAddress)
-    private shippingAddressModel: typeof ConsumerShippingAddress,
-    @InjectModel(UserStoreMapping)
-    private mappingModel: typeof UserStoreMapping,
-    @InjectModel(Role) private roleModel: typeof Role,
-    @InjectModel(Permission) private permissionModel: typeof Permission,
+    private readonly userRepo: UserRepository,
+    private readonly pkgRepo: PackageRepository,
     private sequelize: Sequelize,
   ) {}
 
   async allUsers() {
     try {
-      const users = await this.userModel.findAll();
+      const users = await this.userRepo.userModel.findAll();
       return {
         message: AllMessages.FTCH_USERS,
         data: users,
@@ -58,7 +42,9 @@ export class UsersService {
         billingAddress,
       } = body;
 
-      const user = await this.userModel.findOne({ where: { id: userId } });
+      const user = await this.userRepo.userModel.findOne({
+        where: { id: userId },
+      });
 
       if (!user) {
         throw new BadRequestException(AllMessages.USERS_NF);
@@ -87,7 +73,7 @@ export class UsersService {
         user.password = hashPasswordMD5(newPassword);
       }
 
-      await this.shippingAddressModel.destroy({
+      await this.pkgRepo.consumerShippingModel.destroy({
         where: { consumerId: userId },
       });
 
@@ -111,7 +97,7 @@ export class UsersService {
             selected = false;
           }
 
-          await this.shippingAddressModel.create({
+          await this.pkgRepo.consumerShippingModel.create({
             consumerId: userId,
             label,
             address,
@@ -141,8 +127,8 @@ export class UsersService {
 
   async getUserSetting(userId: number) {
     try {
-      const userDetail = await this.userModel.findByPk(userId);
-      const shippingDetails = await this.shippingAddressModel.findAll({
+      const userDetail = await this.userRepo.userModel.findByPk(userId);
+      const shippingDetails = await this.pkgRepo.consumerShippingModel.findAll({
         where: { consumerId: userId },
       });
 
@@ -162,7 +148,7 @@ export class UsersService {
 
   async getPermissions() {
     try {
-      const allPermissions = await this.permissionModel.findAll({
+      const allPermissions = await this.userRepo.permissionModel.findAll({
         where: { isSuperAdminPermission: false },
       });
 
@@ -189,7 +175,9 @@ export class UsersService {
     try {
       const { userId, salesAgent, logisticAgent } = body;
 
-      const user = await this.userModel.findByPk(userId, { transaction: t });
+      const user = await this.userRepo.userModel.findByPk(userId, {
+        transaction: t,
+      });
       if (!user) {
         await t.rollback();
         throw new BadRequestException(AllMessages.USERS_NF);
@@ -197,11 +185,11 @@ export class UsersService {
 
       const restrictedRoles = [ROLES.CONSIGNER, ROLES.CONSUMER];
 
-      const mappings = (await this.mappingModel.findAll({
+      const mappings = (await this.userRepo.userStoreMappingModel.findAll({
         where: { userId, storeId },
         include: [
           {
-            model: Role,
+            model: this.userRepo.roleModel,
             as: 'role',
             attributes: ['roleName'],
           },
@@ -250,7 +238,15 @@ export class UsersService {
     }
   }
 
-  async consumerList(body: any, storeId: number) {
+  /**
+   * @description Get consumer list
+   * @param body
+   * @param user
+   * @returns
+   */
+  async consumerList(body: any, user: getUser) {
+    const { storeId } = user;
+
     try {
       const {
         status = [
@@ -265,29 +261,29 @@ export class UsersService {
       const Nlimit = parseInt(limit);
       const offset = (parseInt(page) - 1) * Nlimit;
 
-      const packages = await PackageOrder.findAll({
+      const packages = await this.pkgRepo.packageOrderModel.findAll({
         where: { store_id: storeId, ...(status ? { status } : {}) },
         attributes: ['id', 'order_id', 'paymentStatus'],
         include: [
           {
-            model: PackageCustomer,
+            model: this.pkgRepo.packageCustomerModel,
             as: 'customers',
-            attributes: ['customer_id', 'package_id'],
+            attributes: ['id', 'package_id', 'customer_id'],
             include: [
               {
-                model: User,
+                model: this.userRepo.userModel,
                 as: 'customer',
-                attributes: ['userId', 'firstName', 'lastName'],
+                attributes: ['id', 'firstName', 'lastName'],
               },
             ],
           },
           {
-            model: PackageBrand,
+            model: this.pkgRepo.packageBrandModel,
             as: 'brands',
             attributes: ['id', 'selected'],
             include: [
               {
-                model: PackageBrandItems,
+                model: this.pkgRepo.packageBrandItemsModel,
                 as: 'items',
                 attributes: ['id', 'consumerDemand', 'price'],
               },
@@ -313,7 +309,7 @@ export class UsersService {
       // Step 2: Group by consumer
       const consumerMap = new Map();
 
-      packages.forEach((pkg) => {
+      packages.forEach((pkg: any) => {
         pkg?.customers?.forEach((c) => {
           const user = c.customer;
           if (!user) return;
@@ -372,13 +368,18 @@ export class UsersService {
     }
   }
 
-  async checkAddress(user: any) {
+  /**
+   * @description Check address
+   * @param user
+   * @returns
+   */
+  async checkAddress(user: getUser) {
     try {
       const { userId, isConsumer, storeId } = user;
       let addressRecord;
 
       if (isConsumer) {
-        addressRecord = await this.shippingAddressModel.findOne({
+        addressRecord = await this.pkgRepo.consumerShippingModel.findOne({
           where: { consumerId: userId },
           attributes: ['country'],
         });
@@ -402,13 +403,18 @@ export class UsersService {
     }
   }
 
+  /**
+   * @description Get consumer details
+   * @param email
+   * @returns
+   */
   async consumerDetails(email: string) {
     try {
-      const consumer = await this.userModel.findOne({
+      const consumer = await this.userRepo.userModel.findOne({
         where: { email },
         include: [
           {
-            model: UserStoreMapping,
+            model: this.userRepo.userStoreMappingModel,
             as: 'mappings',
             required: true,
             attributes: [],

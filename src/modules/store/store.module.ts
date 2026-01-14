@@ -1,22 +1,11 @@
-import { Module, Global } from '@nestjs/common';
-import { SequelizeModule } from '@nestjs/sequelize';
-import { StoreAddress, StoreLocation, Invoice, Label, PrintTemplate } from './entities';
-import { StoreService } from './store.service';
+import { Global, Module } from '@nestjs/common';
+import { DatabaseModule } from 'src/db/database.module';
 import { StoreController } from './store.controller';
-import { Store } from '../users/entities';
+import { StoreService } from './store.service';
 
 @Global()
 @Module({
-  imports: [
-    SequelizeModule.forFeature([
-      Store,
-      StoreAddress,
-      StoreLocation,
-      Invoice,
-      Label,
-      PrintTemplate,
-    ]),
-  ],
+  imports: [DatabaseModule],
   providers: [StoreService],
   controllers: [StoreController],
   exports: [StoreService],

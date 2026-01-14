@@ -1,35 +1,34 @@
-import { Controller, Post, Param, Body } from '@nestjs/common';
+import { Body, Controller, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ShopifyService } from './shopify.service';
-import { InjectModel } from '@nestjs/sequelize';
-import { Store } from '../users/entities';
-import { Inventory } from '../inventory/entities';
-import { Variant } from '../products/entities';
-import { ProductList } from '../products/entities';
+
 import { BadRequestException } from '@nestjs/common';
+import { ProductRepository } from 'src/db/repository/product.repository';
+import { StoreRepository } from 'src/db/repository/store.repository';
 
 @ApiTags('Shopify')
 @Controller('shopify')
 export class ShopifyController {
   constructor(
     private readonly shopifyService: ShopifyService,
-    @InjectModel(Store) private storeModel: typeof Store,
-    @InjectModel(Inventory) private inventoryModel: typeof Inventory,
-    @InjectModel(ProductList) private productListModel: typeof ProductList,
-    @InjectModel(Variant) private variantModel: typeof Variant,
+    private readonly storeRepo: StoreRepository,
+    private readonly productrepo: ProductRepository,
   ) {}
 
   @Post('sync-product/:productId/:storeId')
-  async productSync(@Param('productId') productId: number, @Param('storeId') storeId: number) {
+  async productSync(
+    @Param('productId') productId: number,
+    @Param('storeId') storeId: number,
+  ) {
     try {
-      const store = await this.storeModel.findByPk(storeId);
+      const store = await this.storeRepo.storeModel.findByPk(storeId);
       if (!store) throw new BadRequestException('Store not found');
 
-      const product = await this.productListModel.findOne({
+      const product = await this.productrepo.productListModel.findOne({
         where: { product_id: productId },
         include: [
-          { model: this.variantModel, as: 'variants' },
-          { model: this.inventoryModel, as: 'inventories' },
+          { model: this.productrepo.variantModel, as: 'variants' },
+          { model: this.productrepo.inventoryModel, as: 'inventories' },
         ],
       });
 
@@ -51,34 +50,42 @@ export class ShopifyController {
         },
       };
 
-      const shopifyResponse = await this.shopifyService.syncProduct(store, payload);
+      const shopifyResponse = await this.shopifyService.syncProduct(
+        store,
+        payload,
+      );
 
       if (shopifyResponse?.product?.id) {
         const inventoryIds = inventories.map((inv: any) => inv.id);
-        await this.inventoryModel.update(
+        await this.productrepo.inventoryModel.update(
           { shopifyId: shopifyResponse.product.id },
           { where: { id: inventoryIds } },
         );
       }
 
-      return {success: true, data: shopifyResponse };
+      return { success: true, data: shopifyResponse };
     } catch (err) {
-      throw err instanceof BadRequestException ? err : new BadRequestException(err.message);
+      throw err instanceof BadRequestException
+        ? err
+        : new BadRequestException(err.message);
     }
   }
 
   @Post('sold-item/:storeId')
-  async soldItem(@Param('storeId') storeId: number, @Body() body: { itemIds: number[] }) {
+  async soldItem(
+    @Param('storeId') storeId: number,
+    @Body() body: { itemIds: number[] },
+  ) {
     try {
       const { itemIds } = body;
       if (!Array.isArray(itemIds) || itemIds.length === 0) {
         throw new BadRequestException('itemIds array is required.');
       }
 
-      const store = await this.storeModel.findByPk(storeId);
+      const store = await this.storeRepo.storeModel.findByPk(storeId);
       if (!store) throw new BadRequestException('Store not found.');
 
-      const inventoryItems = await this.inventoryModel.findAll({
+      const inventoryItems = await this.productrepo.inventoryModel.findAll({
         where: { id: itemIds, storeId },
       });
 
@@ -86,13 +93,20 @@ export class ShopifyController {
         throw new BadRequestException('No matching inventory items found.');
       }
 
-      const shopifyProductIds = inventoryItems.map((item: any) => item.shopifyId).filter(Boolean);
+      const shopifyProductIds = inventoryItems
+        .map((item: any) => item.shopifyId)
+        .filter(Boolean);
 
       if (shopifyProductIds.length === 0) {
-        throw new BadRequestException('No items have valid Shopify IDs to delete.');
+        throw new BadRequestException(
+          'No items have valid Shopify IDs to delete.',
+        );
       }
 
-      const deletionResults = await this.shopifyService.deleteItems(store, shopifyProductIds);
+      const deletionResults = await this.shopifyService.deleteItems(
+        store,
+        shopifyProductIds,
+      );
 
       return {
         success: true,
@@ -100,7 +114,9 @@ export class ShopifyController {
         data: deletionResults,
       };
     } catch (err) {
-      throw err instanceof BadRequestException ? err : new BadRequestException(err.message);
+      throw err instanceof BadRequestException
+        ? err
+        : new BadRequestException(err.message);
     }
   }
 }

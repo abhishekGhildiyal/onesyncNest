@@ -1,14 +1,9 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import { User } from '../users/entities/user.entity';
-import { AllMessages } from '../../common/constants/messages';
-import { hashPasswordMD5 } from '../../common/helpers/hash.helper';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { UserRepository } from 'src/db/repository/user.repository';
 
 @Injectable()
 export class OnboardingService {
-  constructor(
-    @InjectModel(User) private userModel: typeof User,
-  ) {}
+  constructor(private userrepo: UserRepository) {}
 
   // Porting from onboarding/controller.js
   // Note: legacy code used UserTokenModel which isn't defined in the SQL models found so far.
@@ -24,6 +19,8 @@ export class OnboardingService {
   async resetPassword(body: any) {
     const { token, password } = body;
     // Implementation would depend on UserTokenModel
-    throw new BadRequestException('Reset password logic requires UserTokenModel which is missing in legacy source.');
+    throw new BadRequestException(
+      'Reset password logic requires UserTokenModel which is missing in legacy source.',
+    );
   }
 }

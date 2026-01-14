@@ -13,7 +13,7 @@ import { LABEL_TYPES } from 'src/common/constants/enum';
   createdAt: 'created_at',
   updatedAt: 'updated_at',
 })
-export class Label extends Model<Label> {
+export class Label extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

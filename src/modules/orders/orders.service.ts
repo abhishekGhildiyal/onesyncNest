@@ -8,12 +8,12 @@ import {
   PAYMENT_STATUS,
 } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
-import { createManualOrderHelper } from '../../common/helpers/create-manual-order.helper';
 import { generateOrderId } from '../../common/helpers/order-generator.helper';
-import { markSoldInventory } from '../../common/helpers/sold-inventory.helper';
 import { sortSizes } from '../../common/helpers/sort-sizes.helper';
 import { MailService } from '../mail/mail.service';
 
+import { ManualOrderHelperService } from 'src/common/helpers/create-manual-order.helper';
+import { MarkInventorySold } from 'src/common/helpers/sold-inventory.helper';
 import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
@@ -24,7 +24,7 @@ import { SocketGateway } from '../socket/socket.gateway';
 @Injectable()
 export class OrdersService {
   constructor(
-    private readonly packageRepo: PackageRepository,
+    private readonly pkgRepo: PackageRepository,
     private readonly userRepo: UserRepository,
     private readonly productRepo: ProductRepository,
     private readonly storeRepo: StoreRepository,
@@ -33,6 +33,9 @@ export class OrdersService {
     private readonly mailService: MailService,
     private readonly sequelize: Sequelize,
     private readonly shopifyService: ShopifyService,
+
+    private readonly createManualOrderService: ManualOrderHelperService,
+    private readonly MarkInventorySold: MarkInventorySold,
   ) {}
 
   async getPackageBrands(user: any, params: any, query: any) {
@@ -43,10 +46,10 @@ export class OrdersService {
 
       if (roleName === 'Consumer') {
         const linked = isAccess
-          ? await this.packageRepo.accessPackageCustomerModel.findOne({
+          ? await this.pkgRepo.accessPackageCustomerModel.findOne({
               where: { package_id: orderId, customer_id: userId },
             })
-          : await this.packageRepo.packageCustomerModel.findOne({
+          : await this.pkgRepo.packageCustomerModel.findOne({
               where: { package_id: orderId, customer_id: userId },
             });
         if (!linked) throw new BadRequestException(AllMessages.PAKG_NF);
@@ -54,13 +57,13 @@ export class OrdersService {
 
       const OrderModelRef = (
         isAccess
-          ? this.packageRepo.accessPackageOrderModel
-          : this.packageRepo.packageOrderModel
+          ? this.pkgRepo.accessPackageOrderModel
+          : this.pkgRepo.packageOrderModel
       ) as any;
       const BrandModelRef = (
         isAccess
-          ? this.packageRepo.accessPackageBrandModel
-          : this.packageRepo.packageBrandModel
+          ? this.pkgRepo.accessPackageBrandModel
+          : this.pkgRepo.packageBrandModel
       ) as any;
 
       const packageOrder = await OrderModelRef.findByPk(orderId);
@@ -120,8 +123,8 @@ export class OrdersService {
 
       const brandIds = packageBrands.map((b) => b.id);
       const pkgItemsModelRef: any = isAccess
-        ? this.packageRepo.accessPackageBrandItemsModel
-        : this.packageRepo.packageBrandItemsModel;
+        ? this.pkgRepo.accessPackageBrandItemsModel
+        : this.pkgRepo.packageBrandItemsModel;
 
       const showCreateItem = await pkgItemsModelRef.findOne({
         where: {
@@ -170,7 +173,7 @@ export class OrdersService {
       const { userId } = user;
       const { status, page = 1, limit = 10 } = body;
       const consumerStore =
-        await this.packageRepo.accessPackageCustomerModel.findAll({
+        await this.pkgRepo.accessPackageCustomerModel.findAll({
           where: { customer_id: userId },
           attributes: ['package_id'],
         });
@@ -186,7 +189,7 @@ export class OrdersService {
         status: status || PACKAGE_STATUS.ACCESS,
       };
       const { rows: orders, count: total } =
-        await this.packageRepo.accessPackageOrderModel.findAndCountAll({
+        await this.pkgRepo.accessPackageOrderModel.findAndCountAll({
           where: whereCond,
           limit: Number(limit),
           offset: (Number(page) - 1) * Number(limit),
@@ -213,12 +216,10 @@ export class OrdersService {
     try {
       const { userId } = user;
       const { status, page = 1, limit = 10 } = body;
-      const consumerStore = await this.packageRepo.packageCustomerModel.findAll(
-        {
-          where: { customer_id: userId },
-          attributes: ['package_id'],
-        },
-      );
+      const consumerStore = await this.pkgRepo.packageCustomerModel.findAll({
+        where: { customer_id: userId },
+        attributes: ['package_id'],
+      });
       const packageIds = consumerStore.map((item) => item.package_id);
       if (packageIds.length === 0)
         return {
@@ -260,7 +261,7 @@ export class OrdersService {
         }
       }
       const { rows: orders, count: total } =
-        await this.packageRepo.packageOrderModel.findAndCountAll({
+        await this.pkgRepo.packageOrderModel.findAndCountAll({
           where: whereCond,
           limit: Number(limit),
           offset: (Number(page) - 1) * Number(limit),
@@ -291,7 +292,6 @@ export class OrdersService {
    */
   async storeOrders(user: getUser, body: any) {
     try {
-      console.log('user', user);
       const { storeId } = user;
       const {
         status,
@@ -316,7 +316,7 @@ export class OrdersService {
        */
       if (status === PACKAGE_STATUS.ACCESS) {
         const { rows, count } =
-          await this.packageRepo.accessPackageOrderModel.findAndCountAll({
+          await this.pkgRepo.accessPackageOrderModel.findAndCountAll({
             where: {
               store_id: storeId,
               status: { [Op.ne]: PACKAGE_STATUS.DRAFT },
@@ -334,7 +334,7 @@ export class OrdersService {
             ],
             include: [
               {
-                model: this.packageRepo.accessPackageCustomerModel,
+                model: this.pkgRepo.accessPackageCustomerModel,
                 as: 'customers',
                 attributes: ['customer_id'],
               },
@@ -452,7 +452,7 @@ export class OrdersService {
       if (customerId) whereCustCond.customer_id = customerId;
 
       const { rows, count } =
-        await this.packageRepo.packageOrderModel.findAndCountAll({
+        await this.pkgRepo.packageOrderModel.findAndCountAll({
           where: whereCond,
           limit: Nlimit,
           offset,
@@ -462,7 +462,7 @@ export class OrdersService {
           nest: true,
           include: [
             {
-              model: this.packageRepo.packageCustomerModel,
+              model: this.pkgRepo.packageCustomerModel,
               as: 'customers',
               where: whereCustCond,
               required: !!customerId,
@@ -475,7 +475,7 @@ export class OrdersService {
               ],
             },
             {
-              model: this.packageRepo.packagePaymentModel,
+              model: this.pkgRepo.packagePaymentModel,
               as: 'payment',
               where: wherePayCond,
               required,
@@ -489,13 +489,19 @@ export class OrdersService {
        |----------------------------------------
        */
 
-      const grouped = {};
+      const grouped: Record<number, any> = {};
+
       for (const row of rows) {
         if (!grouped[row.id]) grouped[row.id] = { ...row, payments: [] };
-        // @ts-ignore
-        if (row.payment?.payment_date) {
-          // @ts-ignore
-          grouped[row.id].payments.push(row.payment);
+
+        // Payment can be a single object or an array depending on query/raw
+        const payment = row.payment as any;
+        if (Array.isArray(payment)) {
+          for (const p of payment) {
+            if (p?.payment_date) grouped[row.id].payments.push(p);
+          }
+        } else if (payment?.payment_date) {
+          grouped[row.id].payments.push(payment);
         }
       }
 
@@ -535,17 +541,17 @@ export class OrdersService {
       const isAccess = query.access === 'true';
 
       const OrderModel: any = isAccess
-        ? this.packageRepo.accessPackageOrderModel
-        : this.packageRepo.packageOrderModel;
+        ? this.pkgRepo.accessPackageOrderModel
+        : this.pkgRepo.packageOrderModel;
       const BrandItemsModel: any = isAccess
-        ? this.packageRepo.accessPackageBrandItemsModel
-        : this.packageRepo.packageBrandItemsModel;
+        ? this.pkgRepo.accessPackageBrandItemsModel
+        : this.pkgRepo.packageBrandItemsModel;
       const BrandItemsCapacityModel: any = isAccess
-        ? this.packageRepo.accessPackageBrandItemsCapacityModel
-        : this.packageRepo.packageBrandItemsCapacityModel;
+        ? this.pkgRepo.accessPackageBrandItemsCapacityModel
+        : this.pkgRepo.packageBrandItemsCapacityModel;
       const BrandItemsQtyModel: any = isAccess
-        ? this.packageRepo.accessPackageBrandItemsQtyModel
-        : this.packageRepo.packageBrandItemsQtyModel;
+        ? this.pkgRepo.accessPackageBrandItemsQtyModel
+        : this.pkgRepo.packageBrandItemsQtyModel;
 
       const packageOrderData = await OrderModel.findByPk(orderId, {
         attributes: ['status'],
@@ -601,7 +607,7 @@ export class OrdersService {
       if (!isAccess) {
         includeArray.push(
           {
-            model: this.packageRepo.packageBrandItemsCapacityModel,
+            model: this.pkgRepo.packageBrandItemsCapacityModel,
             as: 'capacities',
             attributes: [
               'id',
@@ -628,7 +634,7 @@ export class OrdersService {
             ],
           },
           {
-            model: this.packageRepo.packageBrandItemsQtyModel,
+            model: this.pkgRepo.packageBrandItemsQtyModel,
             as: 'sizeQuantities',
             attributes: [
               'variant_size',
@@ -798,10 +804,12 @@ export class OrdersService {
     try {
       const { orderId, brandId } = params;
 
-      const packageOrderData =
-        await this.packageRepo.packageOrderModel.findByPk(orderId, {
+      const packageOrderData = await this.pkgRepo.packageOrderModel.findByPk(
+        orderId,
+        {
           attributes: ['status'],
-        });
+        },
+      );
       if (!packageOrderData)
         throw new BadRequestException('Package order not found');
 
@@ -819,7 +827,7 @@ export class OrdersService {
           ],
         },
         {
-          model: this.packageRepo.packageBrandItemsCapacityModel,
+          model: this.pkgRepo.packageBrandItemsCapacityModel,
           as: 'capacities',
           attributes: [
             'id',
@@ -846,7 +854,7 @@ export class OrdersService {
           ],
         },
         {
-          model: this.packageRepo.packageBrandItemsQtyModel,
+          model: this.pkgRepo.packageBrandItemsQtyModel,
           as: 'sizeQuantities',
           attributes: [
             'variant_size',
@@ -859,8 +867,8 @@ export class OrdersService {
         },
       ];
 
-      const packageOrder =
-        await this.packageRepo.packageBrandItemsModel.findAll({
+      const packageOrder: any =
+        await this.pkgRepo.packageBrandItemsModel.findAll({
           where: { packageBrand_id: brandId },
           include: includeArray,
         });
@@ -967,7 +975,7 @@ export class OrdersService {
 
   async updateVarientQuantity(body: any) {
     const t = await (
-      this.packageRepo.packageOrderModel.sequelize as any
+      this.pkgRepo.packageOrderModel.sequelize as any
     ).transaction();
     try {
       const { brandId, items = [], packageOrderId, isSearch } = body;
@@ -980,7 +988,7 @@ export class OrdersService {
         itemTotalQuantity += totalQuantity;
 
         updates.push(
-          this.packageRepo.packageBrandItemsModel.update(
+          this.pkgRepo.packageBrandItemsModel.update(
             { consumerDemand: totalQuantity },
             { where: { id: itemId }, transaction: t },
           ),
@@ -988,7 +996,7 @@ export class OrdersService {
         for (const variant of variants) {
           if (!variant || variant.size == null) continue;
           updates.push(
-            this.packageRepo.packageBrandItemsQtyModel.update(
+            this.pkgRepo.packageBrandItemsQtyModel.update(
               { selectedCapacity: variant.quantity },
               {
                 where: {
@@ -1004,7 +1012,7 @@ export class OrdersService {
       await Promise.all(updates);
 
       if (!isSearch) {
-        await this.packageRepo.packageBrandModel.update(
+        await this.pkgRepo.packageBrandModel.update(
           { selected: itemTotalQuantity > 0 },
           {
             where: { package_id: packageOrderId, id: brandId },
@@ -1026,14 +1034,14 @@ export class OrdersService {
       const { items } = body;
       for (const item of items || []) {
         const { itemId, totalQuantity, variants } = item;
-        await this.packageRepo.packageBrandItemsModel.update(
+        await this.pkgRepo.packageBrandItemsModel.update(
           { consumerDemand: totalQuantity },
           { where: { id: itemId } },
         );
         for (const variant of variants || []) {
           const { size, quantity } = variant;
           if (size == null) continue;
-          await this.packageRepo.packageBrandItemsQtyModel.update(
+          await this.pkgRepo.packageBrandItemsQtyModel.update(
             { selectedCapacity: quantity },
             {
               where: {
@@ -1055,7 +1063,7 @@ export class OrdersService {
 
   async setItemPrice(user: any, body: any) {
     const t = await (
-      this.packageRepo.packageOrderModel.sequelize as any
+      this.pkgRepo.packageOrderModel.sequelize as any
     ).transaction();
     try {
       const {
@@ -1067,7 +1075,7 @@ export class OrdersService {
       } = body;
       const { userId } = user;
 
-      const existingOrder = await this.packageRepo.packageOrderModel.findOne({
+      const existingOrder = await this.pkgRepo.packageOrderModel.findOne({
         where: {
           id: packageOrderId,
           status: {
@@ -1081,7 +1089,7 @@ export class OrdersService {
           },
         },
         include: [
-          { model: this.packageRepo.packageCustomerModel, as: 'customers' },
+          { model: this.pkgRepo.packageCustomerModel, as: 'customers' },
         ],
         transaction: t,
       });
@@ -1092,7 +1100,7 @@ export class OrdersService {
       }
 
       if (existingOrder.sales_agent_id == null) {
-        await this.packageRepo.packageOrderModel.update(
+        await this.pkgRepo.packageOrderModel.update(
           { sales_agent_id: userId },
           { where: { id: packageOrderId }, transaction: t },
         );
@@ -1106,7 +1114,7 @@ export class OrdersService {
       if (prices.length) {
         await Promise.all(
           prices.map(({ price, packageBrandItemId }) =>
-            this.packageRepo.packageBrandItemsModel.update(
+            this.pkgRepo.packageBrandItemsModel.update(
               { price },
               {
                 where: {
@@ -1130,7 +1138,7 @@ export class OrdersService {
         itemTotalQuantity += totalQuantity;
 
         itemUpdates.push(
-          this.packageRepo.packageBrandItemsModel.update(
+          this.pkgRepo.packageBrandItemsModel.update(
             { consumerDemand: totalQuantity },
             { where: { id: itemId }, transaction: t },
           ),
@@ -1139,7 +1147,7 @@ export class OrdersService {
         for (const variant of variants) {
           if (!variant?.size) continue;
           variantUpdates.push(
-            this.packageRepo.packageBrandItemsQtyModel.update(
+            this.pkgRepo.packageBrandItemsQtyModel.update(
               { selectedCapacity: variant.quantity },
               {
                 where: {
@@ -1154,7 +1162,7 @@ export class OrdersService {
       }
 
       if (!isSearch) {
-        await this.packageRepo.packageBrandModel.update(
+        await this.pkgRepo.packageBrandModel.update(
           { selected: itemTotalQuantity > 0 },
           {
             where: { package_id: packageOrderId, id: packageBrandId },
@@ -1176,13 +1184,13 @@ export class OrdersService {
 
   async saveOrderAsDraft(user: any, body: any) {
     const t = await (
-      this.packageRepo.packageOrderModel.sequelize as any
+      this.pkgRepo.packageOrderModel.sequelize as any
     ).transaction();
     try {
       const { packageId, brands = [] } = body;
       const { userId } = user;
 
-      const accessOrder = await this.packageRepo.accessOrderModel.findByPk(
+      const accessOrder = await this.pkgRepo.accessPackageOrderModel.findByPk(
         packageId,
         {
           transaction: t,
@@ -1201,11 +1209,11 @@ export class OrdersService {
       const orderIdStr = await generateOrderId({
         storeId: store.store_id,
         prefix: store.store_code,
-        model: this.packageRepo.packageOrderModel as any,
+        model: this.pkgRepo.packageOrderModel as any,
         transaction: t,
       });
 
-      const pkg = await this.packageRepo.packageOrderModel.create(
+      const pkg = await this.pkgRepo.packageOrderModel.create(
         {
           packageName: accessOrder.packageName,
           user_id: accessOrder.user_id,
@@ -1218,7 +1226,7 @@ export class OrdersService {
         { transaction: t },
       );
 
-      await this.packageRepo.packageCustomerModel.create(
+      await this.pkgRepo.packageCustomerModel.create(
         { package_id: pkg.id, customer_id: userId } as any,
         { transaction: t },
       );
@@ -1235,7 +1243,7 @@ export class OrdersService {
         .map((b: any) => ({ package_id: pkg.id, brand_id: b.brand_id }));
 
       if (brandPayload.length > 0) {
-        const createdBrands = await this.packageBrandModel.bulkCreate(
+        const createdBrands = await this.pkgRepo.packageBrandModel.bulkCreate(
           brandPayload,
           { transaction: t, returning: true },
         );
@@ -1281,14 +1289,15 @@ export class OrdersService {
           }
         }
 
-        const createdItems = await this.packageBrandItemsModel.bulkCreate(
-          itemRecords.map((r) => ({
-            packageBrand_id: r.packageBrand_id,
-            product_id: r.product_id,
-            quantity: r.quantity,
-          })),
-          { transaction: t, returning: true },
-        );
+        const createdItems =
+          await this.pkgRepo.packageBrandItemsModel.bulkCreate(
+            itemRecords.map((r) => ({
+              packageBrand_id: r.packageBrand_id,
+              product_id: r.product_id,
+              quantity: r.quantity,
+            })),
+            { transaction: t, returning: true },
+          );
 
         const tempIdToItemId = new Map();
         createdItems.forEach((item, idx) => {
@@ -1304,9 +1313,12 @@ export class OrdersService {
           .filter((x) => !!x.item_id);
 
         if (finalVariantInsert.length > 0)
-          await this.packageCapacityModel.bulkCreate(finalVariantInsert, {
-            transaction: t,
-          });
+          await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(
+            finalVariantInsert,
+            {
+              transaction: t,
+            },
+          );
 
         const finalSizeInsert = sizeQtyArr
           .map((x) => ({
@@ -1317,9 +1329,12 @@ export class OrdersService {
           .filter((x) => !!x.item_id);
 
         if (finalSizeInsert.length > 0)
-          await this.packageQtyModel.bulkCreate(finalSizeInsert, {
-            transaction: t,
-          });
+          await this.pkgRepo.packageBrandItemsQtyModel.bulkCreate(
+            finalSizeInsert,
+            {
+              transaction: t,
+            },
+          );
       }
 
       await t.commit();
@@ -1335,7 +1350,9 @@ export class OrdersService {
   }
 
   async createOrder(user: any, body: any) {
-    const t = await (this.packageOrderModel.sequelize as any).transaction();
+    const t = await (
+      this.pkgRepo.packageOrderModel.sequelize as any
+    ).transaction();
     try {
       const {
         accessPackageId,
@@ -1346,16 +1363,16 @@ export class OrdersService {
       } = body;
       const { userId } = user;
 
-      const packageOrder = await createManualOrderHelper({
-        accessPackageId,
-        userId,
-        emails,
-        brands,
-        date,
-        customerDetail,
-        transaction: t,
-        mailService: this.mailService,
-      });
+      const packageOrder =
+        await this.createManualOrderService.createManualOrderHelper({
+          accessPackageId,
+          userId,
+          emails,
+          brands,
+          date,
+          customerDetail,
+          transaction: t,
+        });
 
       await t.commit();
       return packageOrder;
@@ -1370,9 +1387,11 @@ export class OrdersService {
   }
 
   async initiateOrder(orderId: number, user: any) {
-    const t = await (this.packageOrderModel.sequelize as any).transaction();
+    const t = await (
+      this.pkgRepo.packageOrderModel.sequelize as any
+    ).transaction();
     try {
-      const order = await this.packageOrderModel.findByPk(orderId, {
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
       });
@@ -1397,7 +1416,7 @@ export class OrdersService {
         );
       }
 
-      await this.packageOrderModel.update(
+      await this.pkgRepo.packageOrderModel.update(
         {
           status: PACKAGE_STATUS.INITIATED,
           sales_agent_id: order.sales_agent_id || user.userId,
@@ -1417,16 +1436,18 @@ export class OrdersService {
   }
 
   async markReview(orderId: number, user: any) {
-    const t = await (this.packageOrderModel.sequelize as any).transaction();
+    const t = await (
+      this.pkgRepo.packageOrderModel.sequelize as any
+    ).transaction();
     try {
-      const existingOrder = await this.packageOrderModel.findOne({
+      const existingOrder = await this.pkgRepo.packageOrderModel.findOne({
         where: { id: orderId, status: PACKAGE_STATUS.INITIATED },
         include: [
-          { model: Store, as: 'store' },
+          { model: this.storeRepo.storeModel, as: 'store' },
           {
-            model: PackageCustomer,
+            model: this.pkgRepo.packageCustomerModel,
             as: 'customers',
-            include: [{ model: User, as: 'customer' }],
+            include: [{ model: this.userRepo.userModel, as: 'customer' }],
           },
         ],
         transaction: t,
@@ -1493,7 +1514,7 @@ export class OrdersService {
 
       transaction = await this.sequelize.transaction();
 
-      const order = await this.packageOrderModel.findByPk(orderId, {
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
         transaction,
       });
 
@@ -1535,13 +1556,13 @@ export class OrdersService {
       let roleId = user.roleId;
       if (!roleId && user.roleName) {
         // fetch role or cache?
-        const role = await this.roleModel.findOne({
+        const role = await this.userRepo.roleModel.findOne({
           where: { roleName: user.roleName },
         });
         roleId = role ? role.id : 0;
       }
 
-      await markSoldInventory(
+      await this.MarkInventorySold.markSoldInventory(
         orderId,
         confirmDate,
         store_id,
@@ -1563,16 +1584,19 @@ export class OrdersService {
       // Send confirmation emails in background
       setImmediate(async () => {
         try {
-          const packageOrder = await this.packageOrderModel.findByPk(orderId, {
-            include: [
-              { model: Store, as: 'store' },
-              {
-                model: PackageCustomer,
-                as: 'customers',
-                include: [{ model: User, as: 'customer' }],
-              },
-            ],
-          });
+          const packageOrder = await this.pkgRepo.packageOrderModel.findByPk(
+            orderId,
+            {
+              include: [
+                { model: this.storeRepo.storeModel, as: 'store' },
+                {
+                  model: this.pkgRepo.packageCustomerModel,
+                  as: 'customers',
+                  include: [{ model: this.userRepo.userModel, as: 'customer' }],
+                },
+              ],
+            },
+          );
 
           if (packageOrder) {
             const anyOrder = packageOrder as any;
@@ -1606,10 +1630,10 @@ export class OrdersService {
     try {
       const { packageOrderId, brandIds = [] } = body;
       const packageOrder =
-        await this.packageOrderModel.findByPk(packageOrderId);
+        await this.pkgRepo.packageOrderModel.findByPk(packageOrderId);
       if (!packageOrder) throw new BadRequestException(AllMessages.PAKG_NF);
 
-      await this.packageBrandModel.update(
+      await this.pkgRepo.packageBrandModel.update(
         { selected: true },
         { where: { package_id: packageOrderId, id: { [Op.in]: brandIds } } },
       );
@@ -1621,7 +1645,7 @@ export class OrdersService {
 
   async getAllOrderItemsPrice(orderId: number) {
     try {
-      const orderItems = await this.packageBrandItemsModel.findAll({
+      const orderItems = await this.pkgRepo.packageBrandItemsModel.findAll({
         where: { id: orderId },
         attributes: [
           'id',
@@ -1648,7 +1672,7 @@ export class OrdersService {
     try {
       const { orderId, brandIds = [] } = body;
 
-      const order = await this.packageOrderModel.findOne({
+      const order = await this.pkgRepo.packageOrderModel.findOne({
         where: { id: orderId },
         attributes: ['id', 'total_amount', 'status'],
         transaction,
@@ -1662,11 +1686,11 @@ export class OrdersService {
         throw new BadRequestException('Brand IDs array is required');
       }
 
-      const brandsItemData = await this.packageBrandItemsModel.findAll({
+      const brandsItemData = await this.pkgRepo.packageBrandItemsModel.findAll({
         where: { packageBrand_id: { [Op.in]: brandIds } },
         include: [
           {
-            model: this.packageQtyModel,
+            model: this.pkgRepo.packageBrandItemsQtyModel,
             as: 'sizeQuantities',
             where: { selectedCapacity: { [Op.gt]: 0 } },
           },
@@ -1680,10 +1704,10 @@ export class OrdersService {
       let hasPrice = false;
 
       for (const brandItem of brandsItemData) {
-        // @ts-ignore
         if (
-          brandItem.sizeQuantities.length === 0 ||
-          brandItem.sizeQuantities[0].selectedCapacity === 0
+          !brandItem.sizeQuantities ||
+          brandItem.sizeQuantities?.length === 0 ||
+          brandItem.sizeQuantities?.[0]?.selectedCapacity === 0
         ) {
           continue;
         }
@@ -1719,18 +1743,18 @@ export class OrdersService {
       order.total_amount = totalPrice;
       await order.save({ transaction });
 
-      const existingPayments = await this.packagePaymentModel.count({
+      const existingPayments = await this.pkgRepo.packagePaymentModel.count({
         where: { package_id: orderId },
         transaction,
       });
 
       if (existingPayments > 0) {
-        await this.packagePaymentModel.update(
+        await this.pkgRepo.packagePaymentModel.update(
           { total_amount: totalPrice },
           { where: { package_id: orderId }, transaction },
         );
       } else {
-        await this.packagePaymentModel.create(
+        await this.pkgRepo.packagePaymentModel.create(
           { package_id: orderId, total_amount: totalPrice },
           { transaction },
         );
@@ -1751,18 +1775,18 @@ export class OrdersService {
 
   async totalItemCount(orderId: number) {
     try {
-      const brands = await this.packageBrandModel.findAll({
+      const brands = await this.pkgRepo.packageBrandModel.findAll({
         where: { package_id: orderId, selected: true },
         attributes: ['id', 'brand_id'],
         include: [
           {
-            model: this.packageBrandItemsModel,
+            model: this.pkgRepo.packageBrandItemsModel,
             as: 'items',
             where: { consumerDemand: { [Op.gt]: 0 } },
             attributes: ['id', 'consumerDemand', 'isItemReceived', 'price'],
             include: [
               {
-                model: this.packageQtyModel,
+                model: this.pkgRepo.packageBrandItemsQtyModel,
                 as: 'sizeQuantities',
                 attributes: ['id', 'item_id', 'receivedQuantity'],
               },
@@ -1771,7 +1795,6 @@ export class OrdersService {
         ],
       });
 
-      // @ts-ignore
       const allItems = brands.flatMap((brand) => brand.items || []);
 
       const totalConsumerDemand = allItems.reduce(
@@ -1782,7 +1805,6 @@ export class OrdersService {
       const receivedQuantity = allItems.reduce((acc, item) => {
         if (item.isItemReceived === ORDER_ITEMS.ITM_RECEIVED) {
           // Use Enum
-          // @ts-ignore
           const qtySum = (item.sizeQuantities || []).reduce(
             (sum, sq) =>
               sum + (sq.receivedQuantity > 0 ? sq.receivedQuantity : 0),
@@ -1794,10 +1816,8 @@ export class OrdersService {
       }, 0);
 
       const prices = allItems.reduce((acc, item) => {
-        // @ts-ignore
         if (
           item.isItemReceived === ORDER_ITEMS.ITM_RECEIVED &&
-          // @ts-ignore
           (item.sizeQuantities || []).some((sq) => sq.receivedQuantity > 0)
         ) {
           return acc + (Number(item.price) || 0);
@@ -1816,10 +1836,9 @@ export class OrdersService {
     }
   }
 
-  async orderCount(user: any) {
+  async orderCount(user: getUser) {
     try {
       const { storeId, userId, isConsumer } = user;
-      console.log(storeId, userId, isConsumer);
 
       const getCount = (
         orders: any,
@@ -1832,7 +1851,7 @@ export class OrdersService {
       };
 
       if (isConsumer) {
-        const cOrders = await this.packageCustomerModel.findAll({
+        const cOrders = await this.pkgRepo.packageCustomerModel.findAll({
           where: { customer_id: userId },
           attributes: ['package_id'],
           raw: true,
@@ -1852,7 +1871,7 @@ export class OrdersService {
           };
         }
 
-        const orders = await this.packageOrderModel.findAll({
+        const orders = await this.pkgRepo.packageOrderModel.findAll({
           where: { id: { [Op.in]: packageIds } },
           attributes: ['status', 'isManualOrder'],
           raw: true,
@@ -1876,13 +1895,13 @@ export class OrdersService {
         return { success: true, data: consumerCount };
       }
 
-      const orders = await this.packageOrderModel.findAll({
+      const orders = await this.pkgRepo.packageOrderModel.findAll({
         where: { store_id: storeId },
         attributes: ['status', 'isManualOrder'],
         raw: true,
       });
 
-      const requestCount = await this.inventoryRequestModel.count({
+      const requestCount = await this.productRepo.inventoryRequestModel.count({
         where: { store_id: storeId, status: 'Requested' },
       });
 
@@ -1907,6 +1926,7 @@ export class OrdersService {
 
       return { success: true, data: finalCount };
     } catch (err) {
+      console.log('err in order count', err);
       throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
     }
   }
@@ -1915,14 +1935,14 @@ export class OrdersService {
     try {
       let userIds: any[] = [];
       if (type === 'sales') {
-        userIds = await this.userStoreMappingModel.findAll({
+        userIds = await this.userRepo.userStoreMappingModel.findAll({
           where: { storeId: user.storeId, is_sales_agent: true },
           attributes: ['userId', 'is_sales_agent', 'is_logistic_agent'],
         });
       }
 
       if (type === 'logistic') {
-        userIds = await this.userStoreMappingModel.findAll({
+        userIds = await this.userRepo.userStoreMappingModel.findAll({
           where: {
             storeId: user.storeId,
             is_logistic_agent: true,
@@ -1935,7 +1955,7 @@ export class OrdersService {
         return { success: true, data: [] };
       }
 
-      const agents = await this.userModel.findAll({
+      const agents = await this.userRepo.userModel.findAll({
         where: { id: { [Op.in]: userIds.map((u) => u.userId) } },
         attributes: ['id', 'firstName', 'lastName', 'email'],
       });
@@ -1954,11 +1974,17 @@ export class OrdersService {
     }
   }
 
-  async startOrderProcess(user: any, body: any) {
+  /**
+   * @description Start order process
+   * @param user
+   * @param body
+   * @returns
+   */
+  async startOrderProcess(user: getUser, body: any) {
     try {
       const { orderId, agentId, agentName } = body;
 
-      const order = await this.packageOrderModel.findByPk(orderId, {
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
         attributes: ['id', 'status', 'store_id', 'employee_id'],
       });
 
@@ -1988,7 +2014,7 @@ export class OrdersService {
     try {
       const { orderId, agentId, agentName } = body;
 
-      const order = await this.packageOrderModel.findByPk(orderId);
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
       if (!order) {
         throw new BadRequestException(
           AllMessages.PAKG_NF || 'Order not found.',
@@ -2012,7 +2038,7 @@ export class OrdersService {
     try {
       const { variantIds } = body;
 
-      const variants = await this.variantModel.findAll({
+      const variants = await this.productRepo.variantModel.findAll({
         where: { id: variantIds },
         attributes: ['id', 'stock_quantity', 'price'],
       });
@@ -2029,7 +2055,7 @@ export class OrdersService {
   async addNotes(body: any) {
     try {
       const { orderId, notes } = body;
-      const order = await this.packageOrderModel.findByPk(orderId);
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
 
       if (!order) {
         throw new BadRequestException(AllMessages.PAKG_NF);
@@ -2049,7 +2075,7 @@ export class OrdersService {
 
   async getNotes(orderId: number) {
     try {
-      const order = await this.packageOrderModel.findByPk(orderId);
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
 
       if (!order) {
         throw new BadRequestException(AllMessages.PAKG_NF);
@@ -2073,16 +2099,16 @@ export class OrdersService {
 
       transaction = await this.sequelize.transaction();
 
-      const order = await this.packageOrderModel.findOne({
+      const order = await this.pkgRepo.packageOrderModel.findOne({
         where: {
           id: orderId,
           status: PACKAGE_STATUS.CONFIRM,
         },
         include: [
           // Simplified include as relationships are trusted or verified elsewhere? Legacy included store/customer.
-          { model: this.storeModel, as: 'store' },
+          { model: this.storeRepo.storeModel, as: 'store' },
           {
-            model: this.packageCustomerModel,
+            model: this.pkgRepo.packageCustomerModel,
             where: { package_id: orderId },
             as: 'customers',
             attributes: ['customer_id'],
@@ -2097,14 +2123,14 @@ export class OrdersService {
       }
 
       if (order.sales_agent_id == null) {
-        await this.packageOrderModel.update(
+        await this.pkgRepo.packageOrderModel.update(
           { sales_agent_id: userId },
           { where: { id: orderId }, transaction },
         );
       }
 
       if (brandIds.length > 0) {
-        await this.packageBrandModel.update(
+        await this.pkgRepo.packageBrandModel.update(
           {
             selected: Sequelize.literal(`
                         CASE
@@ -2124,7 +2150,7 @@ export class OrdersService {
       await order.save({ transaction });
 
       // helper handles optional shopifyService internally if passed
-      await markSoldInventory(
+      await this.MarkInventorySold.markSoldInventory(
         orderId,
         confirmDate,
         storeId,
@@ -2168,7 +2194,7 @@ export class OrdersService {
 
         const sizes = variants.map((v) => v.size.trim());
 
-        const dbVariants = await this.variantModel.findAll({
+        const dbVariants = await this.productRepo.variantModel.findAll({
           where: {
             productId: productMainId,
             status: 1,

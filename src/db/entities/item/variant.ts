@@ -17,7 +17,7 @@ import {
     { name: 'idx_variant_location', fields: ['location'] },
   ],
 })
-export class Variant extends Model<Variant> {
+export class Variant extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

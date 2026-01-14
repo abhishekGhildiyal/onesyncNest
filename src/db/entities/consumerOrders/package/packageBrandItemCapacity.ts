@@ -6,11 +6,13 @@ import {
   PrimaryKey,
   Table,
 } from 'sequelize-typescript';
+import { Variant } from '../../item/variant';
+import { PackageBrandItems } from './packageBrandItems';
 
 @Table({
   timestamps: true,
 })
-export class PackageBrandItemsCapacity extends Model<PackageBrandItemsCapacity> {
+export class PackageBrandItemsCapacity extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -46,4 +48,8 @@ export class PackageBrandItemsCapacity extends Model<PackageBrandItemsCapacity> 
     allowNull: true,
   })
   selectedCapacity: number;
+
+  // Association properties (defined in packageASSOCIATION.ts)
+  declare item?: PackageBrandItems;
+  declare variant?: Variant;
 }

@@ -12,7 +12,7 @@ import { PACKAGE_STATUS } from 'src/common/constants/enum';
 @Table({
   timestamps: true,
 })
-export class AccessPackageOrder extends Model<AccessPackageOrder> {
+export class AccessPackageOrder extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

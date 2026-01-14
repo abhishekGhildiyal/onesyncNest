@@ -1,23 +1,32 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Delete } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { PackagesService } from './packages.service';
+import { PERMISSIONS } from 'src/common/constants/permissions';
+import { AgentType } from 'src/common/decorators/agent-type.decorator';
+import { GetUser } from 'src/common/decorators/get-user.decorator';
+import { RequiredPermissions } from 'src/common/decorators/permission.decorator';
+import type { getUser } from 'src/common/interfaces/common/getUser';
+import { AgentGuard } from '../../common/guards/agent.guard';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { AgentGuard, AgentType } from '../../common/guards/agent.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import {
-  MakePaymentDto,
-  RemovePaymentDto,
-  MakeShipmentDto,
   CloseOrderDto,
-  MarkAllDto,
-  ShortageQuantityDto,
-  PackageSlipDto,
   CustomInvoiceDto,
+  MakePaymentDto,
+  MakeShipmentDto,
+  MarkAllDto,
+  PackageSlipDto,
+  RemovePaymentDto,
+  ShortageQuantityDto,
 } from './dto/packages.dto';
-import { RequiredPermissions } from 'src/common/decorators/permission.decorator';
-import { GetUser } from 'src/common/decorators/get-user.decorator';
-import type { getUser } from 'src/common/interfaces/common/getUser';
-
+import { PackagesService } from './packages.service';
 
 @ApiTags('Packages')
 @Controller('package')
@@ -27,42 +36,55 @@ export class PackagesController {
 
   @Post('payment')
   @AgentType('is_logistic_agent', true)
-  @RequiredPermissions('Ready to Process', 'Completed Orders')
+  @RequiredPermissions(
+    PERMISSIONS.ReadyToProccess.name,
+    PERMISSIONS.Completed.name,
+  )
   makePayment(@GetUser() user: getUser, @Body() body: MakePaymentDto) {
     return this.packagesService.makePayment(user, body);
   }
 
   @Get('paymentDetail/:orderId')
   @AgentType('is_logistic_agent', true)
-  @RequiredPermissions('Ready to Process', 'Completed Orders')
+  @RequiredPermissions(
+    PERMISSIONS.ReadyToProccess.name,
+    PERMISSIONS.Completed.name,
+  )
   paymentDetail(@Param('orderId') orderId: number) {
     return this.packagesService.paymentDetail(orderId);
   }
 
   @Post('removePayment')
-  @RequiredPermissions('Ready to Process', 'Completed Orders')
+  @RequiredPermissions(
+    PERMISSIONS.ReadyToProccess.name,
+    PERMISSIONS.Completed.name,
+  )
   removePayment(@Body() body: RemovePaymentDto) {
     return this.packagesService.removePayment(body);
   }
 
   @Post('shipment')
   @AgentType('is_logistic_agent')
-  @RequiredPermissions('Ready to Process')
+  @RequiredPermissions(PERMISSIONS.ReadyToProccess.name)
   makeShipment(@GetUser() user: any, @Body() body: MakeShipmentDto) {
     return this.packagesService.makeShipment(user, body);
   }
 
   @Get('shipmentDetail/:orderId')
   @AgentType('is_logistic_agent')
-  @RequiredPermissions('Ready to Process')
+  @RequiredPermissions(PERMISSIONS.ReadyToProccess.name)
   shipmentDetail(@Param('orderId') orderId: number) {
     return this.packagesService.shipmentDetail(orderId);
   }
 
   @Post('closeOrder/:orderId')
   @AgentType('is_logistic_agent')
-  @RequiredPermissions('Ready to Process')
-  closeOrder(@GetUser() user: any, @Param('orderId') orderId: number, @Body() body: CloseOrderDto) {
+  @RequiredPermissions(PERMISSIONS.ReadyToProccess.name)
+  closeOrder(
+    @GetUser() user: any,
+    @Param('orderId') orderId: number,
+    @Body() body: CloseOrderDto,
+  ) {
     return this.packagesService.closeOrder(user, orderId, body);
   }
 
@@ -102,7 +124,11 @@ export class PackagesController {
   }
 
   @Post('completePkg/:orderId')
-  completePkg(@GetUser() user: any, @Param('orderId') orderId: number, @Body() body: CloseOrderDto) {
+  completePkg(
+    @GetUser() user: any,
+    @Param('orderId') orderId: number,
+    @Body() body: CloseOrderDto,
+  ) {
     return this.packagesService.completePkg(user, orderId, body);
   }
 

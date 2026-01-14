@@ -11,7 +11,7 @@ import {
   freezeTableName: true,
   timestamps: true,
 })
-export class AccessPackageBrandItemsQty extends Model<AccessPackageBrandItemsQty> {
+export class AccessPackageBrandItemsQty extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

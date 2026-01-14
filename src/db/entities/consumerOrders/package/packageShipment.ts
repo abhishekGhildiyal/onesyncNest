@@ -6,11 +6,12 @@ import {
   PrimaryKey,
   Table,
 } from 'sequelize-typescript';
+import { PackageOrder } from './packageOrder';
 
 @Table({
   timestamps: true,
 })
-export class PackageShipment extends Model<PackageShipment> {
+export class PackageShipment extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -53,4 +54,7 @@ export class PackageShipment extends Model<PackageShipment> {
     allowNull: true,
   })
   tracking_number: string;
+
+  // Association properties (defined in packageASSOCIATION.ts)
+  declare order?: PackageOrder;
 }

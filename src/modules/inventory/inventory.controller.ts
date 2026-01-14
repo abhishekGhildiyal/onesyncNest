@@ -1,7 +1,8 @@
-import { Controller, Post, Body, Get, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { GetUser } from 'src/common/decorators/get-user.decorator';
+import type { getUser } from 'src/common/interfaces/common/getUser';
 import { InventoryService } from './inventory.service';
-import { AuthGuard } from '../../common/guards/auth.guard';
 
 @ApiTags('Inventory')
 @Controller('inventory')
@@ -9,14 +10,12 @@ export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   @Post('all')
-  getAllInventory(@Body() body: any) {
-    const user = { userId: 1 }; // Placeholder
+  getAllInventory(@GetUser() user: getUser, @Body() body: any) {
     return this.inventoryService.getAllInventory(user, body);
   }
 
   @Post('consumer-products')
-  consumerProducts(@Body() body: any) {
-    const user = { userId: 1 }; // Placeholder
+  consumerProducts(@GetUser() user: getUser, @Body() body: any) {
     return this.inventoryService.consumerProducts(user, body);
   }
 
@@ -26,8 +25,7 @@ export class InventoryController {
   }
 
   @Get('brands')
-  inventoryBrands() {
-    const user = { userId: 1 }; // Placeholder
+  inventoryBrands(@GetUser() user: getUser) {
     return this.inventoryService.inventoryBrands(user);
   }
 

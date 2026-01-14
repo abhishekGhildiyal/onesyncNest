@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Op, Sequelize } from 'sequelize';
+import type { getUser } from 'src/common/interfaces/common/getUser';
 import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { AllMessages } from '../../common/constants/messages';
@@ -11,7 +12,7 @@ export class InventoryService {
     private readonly productRepo: ProductRepository,
   ) {}
 
-  async getAllInventory(user: any, body: any) {
+  async getAllInventory(user: getUser, body: any) {
     const { userId } = user;
     const {
       page = 1,
@@ -112,7 +113,7 @@ export class InventoryService {
     }
   }
 
-  async consumerProducts(user: any, body: any) {
+  async consumerProducts(user: getUser, body: any) {
     try {
       const { userId } = user;
       const { page = 1, limit = 10 } = body;
@@ -209,7 +210,7 @@ export class InventoryService {
     }
   }
 
-  async inventoryBrands(user: any) {
+  async inventoryBrands(user: getUser) {
     try {
       const { userId } = user;
       const productMappings =

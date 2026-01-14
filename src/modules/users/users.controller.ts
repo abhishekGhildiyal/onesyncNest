@@ -1,16 +1,26 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Inject } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 import type { getUser } from 'src/common/interfaces/common/getUser';
 
 import { ApiTags } from '@nestjs/swagger';
+import { AuthGuard } from 'src/common/guards/auth.guard';
 import { UsersService } from './users.service';
 
 @ApiTags('Users')
 @Controller('user')
+@UseGuards(AuthGuard)
 export class UsersController {
   constructor(
     @Inject(UsersService)
-    private readonly usersService: UsersService
+    private readonly usersService: UsersService,
   ) {}
 
   @Get('all')
@@ -35,9 +45,7 @@ export class UsersController {
 
   @Post('consumerList')
   consumerList(@Body() body: any, @GetUser() user: getUser) {
-    // Legacy req.user.storeId
-    const storeId = user?.storeId || 1; // Defaulting for now if guard not implemented
-    return this.usersService.consumerList(body, Number(storeId));
+    return this.usersService.consumerList(body, user);
   }
 
   @Get('consumerDetails/:email')
@@ -47,8 +55,7 @@ export class UsersController {
 
   @Post('updateAgentStatus')
   updateAgentStatus(@Body() body: any, @GetUser() user: getUser) {
-    const storeId = user?.storeId || 1;
-    return this.usersService.updateAgentStatus(body, Number(storeId));
+    return this.usersService.updateAgentStatus(body, Number(user.storeId));
   }
 
   @Get('checkAddress')

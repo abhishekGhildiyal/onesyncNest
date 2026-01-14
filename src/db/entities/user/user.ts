@@ -9,13 +9,15 @@ import {
   Unique,
 } from 'sequelize-typescript';
 import { Authenticate } from '../auth/authenticateSchema';
+import { PackageCustomer } from '../consumerOrders/package/packageCustomers';
+import { UserStoreMapping } from './userStoreMapping';
 
 @Table({
   tableName: 'users',
   freezeTableName: true,
   timestamps: false,
 })
-export class User extends Model<User> {
+export class User extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -28,82 +30,82 @@ export class User extends Model<User> {
     type: DataType.STRING,
     field: 'first_name',
   })
-  firstName: string;
+  declare firstName: string;
 
   @Column({
     type: DataType.STRING,
     field: 'last_name',
   })
-  lastName: string;
+  declare lastName: string;
 
   @Column({
     type: DataType.STRING,
     field: 'business_name',
   })
-  businessName: string;
+  declare businessName: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'issue_payment_to',
   })
-  issuePaymentTo: number;
+  declare issuePaymentTo: number;
 
   @Column({
     type: DataType.INTEGER,
     field: 'user_type',
   })
-  type: number;
+  declare type: number;
 
   @Unique
   @Column({
     type: DataType.STRING,
     field: 'phone_number',
   })
-  phnNo: string;
+  declare phnNo: string;
 
   @Unique
   @Column({
     type: DataType.STRING,
   })
-  email: string;
+  declare email: string;
 
   @Column({
     type: DataType.STRING,
     field: 'user_secret_key',
   })
-  password: string;
+  declare password: string;
 
   @Column({
     type: DataType.STRING,
     field: 'user_address',
   })
-  address: string;
+  declare address: string;
 
   @Column({
     type: DataType.STRING,
     field: 'user_address2',
   })
-  address2: string;
+  declare address2: string;
 
   @Column({
     type: DataType.STRING,
   })
-  country: string;
+  declare country: string;
 
   @Column({
     type: DataType.STRING,
   })
-  city: string;
+  declare city: string;
 
   @Column({
     type: DataType.STRING,
   })
-  state: string;
+  declare state: string;
 
   @Column({
     type: DataType.STRING,
   })
-  zip: string;
+  declare zip: string;
 
   // Transient field (not in database)
   // Use class property or getter for transient fields
@@ -112,4 +114,10 @@ export class User extends Model<User> {
   // Relationships
   @HasMany(() => Authenticate)
   authentications: Authenticate[];
+
+  // Association properties (defined in packageASSOCIATION.ts)
+  packageCustomers: PackageCustomer[];
+
+  // Associations from userASSOCIATION.ts
+  mappings: UserStoreMapping[];
 }

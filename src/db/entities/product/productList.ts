@@ -7,6 +7,9 @@ import {
   PrimaryKey,
   Table,
 } from 'sequelize-typescript';
+import { Variant } from '../item/variant';
+import { TagSource } from '../tags/tagSource';
+import { Brands } from './brand';
 
 @Table({
   tableName: 'porduct_list',
@@ -31,7 +34,7 @@ import {
     },
   ],
 })
-export class ProductList extends Model<ProductList> {
+export class ProductList extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -160,6 +163,11 @@ export class ProductList extends Model<ProductList> {
     defaultValue: DataType.NOW,
   })
   updatedBy: Date;
+
+  // Association properties (defined in packageASSOCIATION.ts)
+  declare tags?: TagSource[];
+  declare brandData?: Brands;
+  declare variants?: Variant[];
 
   @BeforeSave
   static beforeSaveHook(product: ProductList): void {

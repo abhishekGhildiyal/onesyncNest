@@ -11,36 +11,36 @@ import {
   tableName: 'roles',
   timestamps: false,
 })
-export class Role extends Model<Role> {
+export class Role extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
     type: DataType.INTEGER,
     field: 'role_id',
   })
-  roleId: number;
+  declare roleId: number;
 
   @Column({
     type: DataType.STRING,
     field: 'role_name',
   })
-  roleName: string;
+  declare roleName: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'role_status',
   })
-  status: number;
+  declare status: number;
 
   @Column({
     type: DataType.STRING,
     field: 'feature_id',
   })
-  featureId: string;
+  declare featureId: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 }

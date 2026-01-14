@@ -1,68 +1,20 @@
 import { Module } from '@nestjs/common';
-import { SequelizeModule } from '@nestjs/sequelize';
-import { InventoryModule } from '../inventory/inventory.module';
-import {
-  PackageBrand,
-  PackageBrandItems,
-  PackageBrandItemsCapacity,
-  PackageBrandItemsQty,
-  PackageCustomer,
-  PackageOrder,
-  PackagePayment,
-  PackageShipment,
-} from '../packages/entities';
-import {
-  AccessPackageBrand,
-  AccessPackageBrandItems,
-  AccessPackageBrandItemsCapacity,
-  AccessPackageBrandItemsQty,
-  AccessPackageCustomer,
-  AccessPackageOrder,
-  Brand,
-  ProductList,
-  Variant,
-} from '../products/entities';
+import { ManualOrderHelperService } from 'src/common/helpers/create-manual-order.helper';
+import { ReducePackageQuantity } from 'src/common/helpers/reduce-package-qty.helper';
+import { MarkInventorySold } from 'src/common/helpers/sold-inventory.helper';
+import { DatabaseModule } from 'src/db/database.module';
 import { ShopifyModule } from '../shopify/shopify.module';
-import {
-  ConsumerShippingAddress,
-  Role,
-  Store,
-  User,
-  UserStoreMapping,
-} from '../users/entities';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
 @Module({
-  imports: [
-    SequelizeModule.forFeature([
-      PackageOrder,
-      PackageBrand,
-      PackageBrandItems,
-      PackageCustomer,
-      PackagePayment,
-      PackageShipment,
-      PackageBrandItemsQty,
-      PackageBrandItemsCapacity,
-      UserStoreMapping,
-      AccessPackageOrder,
-      AccessPackageCustomer,
-      AccessPackageBrand,
-      AccessPackageBrandItems,
-      AccessPackageBrandItemsQty,
-      AccessPackageBrandItemsCapacity,
-      Brand,
-      User,
-      Role,
-      ConsumerShippingAddress,
-      Store,
-      ProductList,
-      Variant,
-      InventoryModule,
-    ]),
-    ShopifyModule,
+  imports: [ShopifyModule, DatabaseModule],
+  providers: [
+    OrdersService,
+    ManualOrderHelperService,
+    MarkInventorySold,
+    ReducePackageQuantity,
   ],
-  providers: [OrdersService],
   controllers: [OrdersController],
   exports: [OrdersService],
 })

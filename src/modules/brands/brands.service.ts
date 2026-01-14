@@ -2,6 +2,8 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { Op, Sequelize } from 'sequelize';
 import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
+import { StoreRepository } from 'src/db/repository/store.repository';
+import { UserRepository } from 'src/db/repository/user.repository';
 import { BRAND_STATUS, PACKAGE_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
 import {
@@ -18,6 +20,8 @@ export class BrandsService {
   constructor(
     private readonly pkgRepo: PackageRepository,
     private readonly productRepo: ProductRepository,
+    private readonly userRepo: UserRepository,
+    private readonly storeRepo: StoreRepository,
     private mailService: MailService,
     private socketGateway: SocketGateway,
     @Inject('SEQUELIZE') private sequelize: Sequelize,
@@ -171,14 +175,14 @@ export class BrandsService {
     try {
       const { type, brandId, brandName } = body;
 
-      const brand = await this.brandModel.findByPk(brandId);
+      const brand = await this.productRepo.brandModel.findByPk(brandId);
       if (!brand) {
         throw new BadRequestException(AllMessages.BRAND_NF);
       }
 
       if (brandName) {
         // Check for duplicate name (excluding current brand)
-        const existingBrand = await this.brandModel.findOne({
+        const existingBrand = await this.productRepo.brandModel.findOne({
           where: {
             brandName,
             id: { [Op.ne]: brandId },
@@ -221,7 +225,7 @@ export class BrandsService {
       }
 
       // Step 1: Fetch products
-      const products = await this.productListModel.findAll({
+      const products = await this.productRepo.productListModel.findAll({
         where: {
           store_id: storeId,
           brand_id: { [Op.in]: brandIds },
@@ -233,7 +237,7 @@ export class BrandsService {
       const productIds = products.map((p) => p.product_id);
 
       // Step 2: Fetch variants in one go
-      const variants = await this.variantModel.findAll({
+      const variants = await this.productRepo.variantModel.findAll({
         where: {
           productId: { [Op.in]: productIds },
           status: 1,
@@ -248,7 +252,7 @@ export class BrandsService {
 
       // Step 3: Fetch brand names
       const brandIdList = [...new Set(products.map((p) => p.brand_id))];
-      const brands = await this.brandModel.findAll({
+      const brands = await this.productRepo.brandModel.findAll({
         where: { id: { [Op.in]: brandIdList } },
         attributes: ['id', 'brandName'],
         raw: true,
@@ -355,7 +359,7 @@ export class BrandsService {
       }
 
       // Step 1: Fetch products
-      const products = await this.productListModel.findAll({
+      const products = await this.productRepo.productListModel.findAll({
         where: {
           store_id: storeId,
           brand_id: { [Op.in]: brandIds },
@@ -374,7 +378,7 @@ export class BrandsService {
       const productIds = products.map((p) => p.product_id);
 
       // Step 2: Fetch variants
-      const variants = await this.variantModel.findAll({
+      const variants = await this.productRepo.variantModel.findAll({
         where: {
           productId: { [Op.in]: productIds },
           status: 1,
@@ -387,7 +391,7 @@ export class BrandsService {
 
       // Step 3: Fetch brand names
       const brandIdList = [...new Set(products.map((p) => p.brand_id))];
-      const brands = await this.brandModel.findAll({
+      const brands = await this.productRepo.brandModel.findAll({
         where: { id: { [Op.in]: brandIdList } },
         attributes: ['id', 'brandName'],
         raw: true,
@@ -547,12 +551,10 @@ export class BrandsService {
 
       // --- Verify Order
       if (orderId) {
-        const packageOrderData = await this.accessPackageOrderModel.findByPk(
-          orderId,
-          {
+        const packageOrderData =
+          await this.pkgRepo.accessPackageOrderModel.findByPk(orderId, {
             attributes: ['status'],
-          },
-        );
+          });
 
         if (!packageOrderData) {
           throw new BadRequestException(AllMessages.PAKG_NF);
@@ -562,7 +564,7 @@ export class BrandsService {
       // --- Relations
       const includeArray = [
         {
-          model: this.productListModel,
+          model: this.productRepo.productListModel,
           as: 'products',
           attributes: [
             'product_id',
@@ -574,12 +576,12 @@ export class BrandsService {
           ],
           include: [
             {
-              model: this.brandModel,
+              model: this.productRepo.brandModel,
               as: 'brandData',
               attributes: ['brandName'],
             },
             {
-              model: this.variantModel,
+              model: this.productRepo.variantModel,
               as: 'variants',
               where: { status: 1, quantity: { [Op.gt]: 0 } },
               attributes: ['id', 'option1Value', 'quantity'],
@@ -589,10 +591,11 @@ export class BrandsService {
       ];
 
       // --- Fetch All Brand Items
-      const brandItems = await this.accessPackageBrandItemsModel.findAll({
-        where: { packageBrand_id: { [Op.in]: brandIds } },
-        include: includeArray,
-      });
+      const brandItems =
+        await this.pkgRepo.accessPackageBrandItemsModel.findAll({
+          where: { packageBrand_id: { [Op.in]: brandIds } },
+          include: includeArray,
+        });
 
       if (!brandItems?.length) {
         throw new BadRequestException(AllMessages.PAKG_NF);
@@ -732,35 +735,36 @@ export class BrandsService {
 
       // CASE 1: linked = true (DEFAULT) - Return ONLY linked customers
       if (linked === 'true') {
-        const linkedCustomers = await this.packageOrderModel.findAll({
+        const linkedCustomers = await this.pkgRepo.packageOrderModel.findAll({
           where: { store_id: user.storeId },
           attributes: ['id'],
           include: [
             {
-              model: this.packageCustomerModel,
+              model: this.pkgRepo.packageCustomerModel,
               as: 'customers',
               attributes: ['customer_id'],
             },
           ],
         });
 
-        const accessCustomers = await this.accessPackageOrderModel.findAll({
-          where: { store_id: user.storeId },
-          attributes: ['id'],
-          include: [
-            {
-              model: this.accessPackageCustomerModel,
-              as: 'customers',
-              attributes: ['customer_id'],
-            },
-          ],
-        });
+        const accessCustomers =
+          await this.pkgRepo.accessPackageOrderModel.findAll({
+            where: { store_id: user.storeId },
+            attributes: ['id'],
+            include: [
+              {
+                model: this.pkgRepo.accessPackageCustomerModel,
+                as: 'customers',
+                attributes: ['customer_id'],
+              },
+            ],
+          });
 
-        const linkedIds = linkedCustomers.flatMap((c) =>
-          c.customers.map((cc) => cc.customer_id),
+        const linkedIds = linkedCustomers.flatMap((c: any) =>
+          c.customers.map((cc: any) => cc.customer_id),
         );
-        const accessIds = accessCustomers.flatMap((c) =>
-          c.customers.map((cc) => cc.customer_id),
+        const accessIds = accessCustomers.flatMap((c: any) =>
+          c.customers.map((cc: any) => cc.customer_id),
         );
 
         // Make unique list
@@ -788,17 +792,17 @@ export class BrandsService {
       }
 
       // Fetch final customers
-      const customers = await this.userModel.findAll({
+      const customers = await this.userRepo.userModel.findAll({
         where: whereCondition,
         include: [
           {
-            model: this.userStoreMappingModel,
+            model: this.userRepo.userStoreMappingModel,
             as: 'mappings',
             required: true,
             attributes: [],
             include: [
               {
-                model: this.roleModel,
+                model: this.userRepo.roleModel,
                 as: 'role',
                 attributes: [],
                 where: { roleName: 'Consumer' },
@@ -834,7 +838,7 @@ export class BrandsService {
       const { userId, storeId } = user;
       const { brands = [], customers = [], packageName } = body;
 
-      const store = await this.storeModel.findByPk(storeId, {
+      const store = await this.storeRepo.storeModel.findByPk(storeId, {
         attributes: ['store_code', 'store_name', 'store_id'],
         transaction: t,
       });
@@ -843,10 +847,11 @@ export class BrandsService {
         throw new BadRequestException('Store not found');
       }
 
-      const AccessPackageName = await this.accessPackageOrderModel.findOne({
-        where: { packageName: packageName },
-        attributes: ['packageName'],
-      });
+      const AccessPackageName =
+        await this.pkgRepo.accessPackageOrderModel.findOne({
+          where: { packageName: packageName },
+          attributes: ['packageName'],
+        });
 
       if (AccessPackageName) {
         throw new BadRequestException(
@@ -854,24 +859,25 @@ export class BrandsService {
         );
       }
 
-      const accessPackageOrder = await this.accessPackageOrderModel.create(
-        {
-          user_id: userId,
-          order_id: await generateOrderId({
-            storeId: store.store_id,
-            prefix: store.store_code,
-            model: this.accessPackageOrderModel,
-            transaction: t,
-          }),
-          store_id: storeId,
-          status: PACKAGE_STATUS.ACCESS,
-          packageName,
-        },
-        { transaction: t },
-      );
+      const accessPackageOrder =
+        await this.pkgRepo.accessPackageOrderModel.create(
+          {
+            user_id: userId,
+            order_id: await generateOrderId({
+              storeId: store.store_id,
+              prefix: store.store_code,
+              model: this.pkgRepo.accessPackageOrderModel,
+              transaction: t,
+            }),
+            store_id: storeId,
+            status: PACKAGE_STATUS.ACCESS,
+            packageName,
+          },
+          { transaction: t },
+        );
 
       const brandIds = brands.map((b) => b.brand_id).filter(Boolean);
-      const validBrands = await this.brandModel.findAll({
+      const validBrands = await this.productRepo.brandModel.findAll({
         where: { id: brandIds },
         transaction: t,
       });
@@ -886,13 +892,11 @@ export class BrandsService {
           brand_id: b.brand_id,
         }));
 
-      const accessPackageBrands = await this.accessPackageBrandModel.bulkCreate(
-        brandPayload,
-        {
+      const accessPackageBrands =
+        await this.pkgRepo.accessPackageBrandModel.bulkCreate(brandPayload, {
           transaction: t,
           returning: true,
-        },
-      );
+        });
 
       const brandIdToPkgBrandId = new Map();
       accessPackageBrands.forEach((b) =>
@@ -917,14 +921,15 @@ export class BrandsService {
       }
 
       // Bulk insert items
-      const createdItems = await this.accessPackageBrandItemsModel.bulkCreate(
-        itemRecords.map((r) => ({
-          packageBrand_id: r.packageBrand_id,
-          product_id: r.product_id,
-          quantity: r.quantity,
-        })),
-        { transaction: t, returning: true },
-      );
+      const createdItems =
+        await this.pkgRepo.accessPackageBrandItemsModel.bulkCreate(
+          itemRecords.map((r) => ({
+            packageBrand_id: r.packageBrand_id,
+            product_id: r.product_id,
+            quantity: r.quantity,
+          })),
+          { transaction: t, returning: true },
+        );
 
       await t.commit();
 
@@ -950,12 +955,11 @@ export class BrandsService {
       const { storeId } = user;
       const { packageOrderId, customers = [], showPrices } = body;
 
-      const existingPackage = await this.accessPackageOrderModel.findByPk(
-        packageOrderId,
-        {
+      const existingPackage =
+        await this.pkgRepo.accessPackageOrderModel.findByPk(packageOrderId, {
           include: [
             {
-              model: this.storeModel,
+              model: this.storeRepo.storeModel,
               as: 'store',
               attributes: [
                 'store_code',
@@ -966,15 +970,14 @@ export class BrandsService {
             },
           ],
           transaction: t,
-        },
-      );
+        });
 
       if (!existingPackage) {
         throw new BadRequestException(AllMessages.PAKG_NF);
       }
 
       // Step 1: Fetch existing users
-      const existingUsers = await this.userModel.findAll({
+      const existingUsers = await this.userRepo.userModel.findAll({
         where: {
           [Op.or]: customers.map((email) => ({
             email: { [Op.iLike]: email },
@@ -1001,17 +1004,20 @@ export class BrandsService {
       }));
 
       if (newUsers.length > 0) {
-        const createdUsers = await this.userModel.bulkCreate(newUsers, {
-          transaction: t,
-          returning: true,
-        });
+        const createdUsers = await this.userRepo.userModel.bulkCreate(
+          newUsers,
+          {
+            transaction: t,
+            returning: true,
+          },
+        );
         createdUsers.forEach((user) =>
           emailToUserMap.set(user.email.toLowerCase(), user),
         );
       }
 
       // Step 3: Get or create Consumer role
-      const [consumerRole] = await this.roleModel.findOrCreate({
+      const [consumerRole] = await this.userRepo.roleModel.findOrCreate({
         where: { roleName: 'Consumer' },
         defaults: { roleName: 'Consumer', status: 1 },
         transaction: t,
@@ -1039,13 +1045,14 @@ export class BrandsService {
       }
 
       // Step 5: Filter out existing user-role mappings
-      const existingMappings = await this.userStoreMappingModel.findAll({
-        where: {
-          userId: userMappings.map((m) => m.userId),
-          roleId: consumerRole.roleId,
-        },
-        transaction: t,
-      });
+      const existingMappings =
+        await this.userRepo.userStoreMappingModel.findAll({
+          where: {
+            userId: userMappings.map((m) => m.userId),
+            roleId: consumerRole.roleId,
+          },
+          transaction: t,
+        });
 
       const existingSet = new Set(
         existingMappings.map(
@@ -1059,14 +1066,14 @@ export class BrandsService {
       );
 
       if (newMappings.length > 0) {
-        await this.userStoreMappingModel.bulkCreate(newMappings, {
+        await this.userRepo.userStoreMappingModel.bulkCreate(newMappings, {
           transaction: t,
         });
       }
 
       // Step 6: Filter out already linked customers for this package
       const alreadyLinkedCustomers =
-        await this.accessPackageCustomerModel.findAll({
+        await this.pkgRepo.accessPackageCustomerModel.findAll({
           where: {
             package_id: packageOrderId,
             customer_id: packageCustomerEntries.map((e) => e.customer_id),
@@ -1083,7 +1090,7 @@ export class BrandsService {
       );
 
       if (newPackageCustomerEntries.length > 0) {
-        await this.accessPackageCustomerModel.bulkCreate(
+        await this.pkgRepo.accessPackageCustomerModel.bulkCreate(
           newPackageCustomerEntries,
           {
             transaction: t,
@@ -1119,12 +1126,10 @@ export class BrandsService {
     try {
       const { packageId, brands = [], packageName } = body;
 
-      const existingPackage = await this.accessPackageOrderModel.findByPk(
-        packageId,
-        {
+      const existingPackage =
+        await this.pkgRepo.accessPackageOrderModel.findByPk(packageId, {
           transaction: t,
-        },
-      );
+        });
 
       if (!existingPackage) {
         await t.rollback();
@@ -1132,14 +1137,14 @@ export class BrandsService {
       }
 
       if (packageName) {
-        const nameExists = await this.accessPackageOrderModel.findOne({
+        const nameExists = await this.pkgRepo.accessPackageOrderModel.findOne({
           where: {
             packageName,
             id: { [Op.ne]: packageId },
           },
           include: [
             {
-              model: this.accessPackageCustomerModel,
+              model: this.pkgRepo.accessPackageCustomerModel,
               as: 'customers',
               attributes: ['customer_id'],
             },
@@ -1160,30 +1165,33 @@ export class BrandsService {
 
       if (brands.length > 0) {
         // Step 1: Delete related data (Qty, Capacity, Items, Brands)
-        const accessBrands = await this.accessPackageBrandModel.findAll({
-          where: { package_id: packageId },
-          attributes: ['id'],
-          transaction: t,
-        });
+        const accessBrands = await this.pkgRepo.accessPackageBrandModel.findAll(
+          {
+            where: { package_id: packageId },
+            attributes: ['id'],
+            transaction: t,
+          },
+        );
 
         const packageBrandIds = accessBrands.map((b) => b.id);
 
         if (packageBrandIds.length > 0) {
-          const brandItems = await this.accessPackageBrandItemsModel.findAll({
-            where: { packageBrand_id: packageBrandIds },
-            attributes: ['id'],
-            transaction: t,
-          });
+          const brandItems =
+            await this.pkgRepo.accessPackageBrandItemsModel.findAll({
+              where: { packageBrand_id: packageBrandIds },
+              attributes: ['id'],
+              transaction: t,
+            });
 
           const itemIds = brandItems.map((item) => item.id);
 
           if (itemIds.length > 0) {
             await Promise.all([
-              this.accessPackageBrandItemsQtyModel.destroy({
+              this.pkgRepo.accessPackageBrandItemsQtyModel.destroy({
                 where: { item_id: itemIds },
                 transaction: t,
               }),
-              this.accessPackageBrandItemsCapacityModel.destroy({
+              this.pkgRepo.accessPackageBrandItemsCapacityModel.destroy({
                 where: { item_id: itemIds },
                 transaction: t,
               }),
@@ -1191,11 +1199,11 @@ export class BrandsService {
           }
 
           await Promise.all([
-            this.accessPackageBrandItemsModel.destroy({
+            this.pkgRepo.accessPackageBrandItemsModel.destroy({
               where: { packageBrand_id: packageBrandIds },
               transaction: t,
             }),
-            this.accessPackageBrandModel.destroy({
+            this.pkgRepo.accessPackageBrandModel.destroy({
               where: { id: packageBrandIds },
               transaction: t,
             }),
@@ -1211,15 +1219,19 @@ export class BrandsService {
           const { brand_id, items = [] } = brand;
           if (!brand_id || items.length === 0) continue;
 
-          const brandExists = await this.brandModel.findByPk(brand_id, {
-            transaction: t,
-          });
+          const brandExists = await this.productRepo.brandModel.findByPk(
+            brand_id,
+            {
+              transaction: t,
+            },
+          );
           if (!brandExists) throw new Error(`Invalid brand_id: ${brand_id}`);
 
-          const accessPackageBrand = await this.accessPackageBrandModel.create(
-            { package_id: packageId, brand_id },
-            { transaction: t },
-          );
+          const accessPackageBrand =
+            await this.pkgRepo.accessPackageBrandModel.create(
+              { package_id: packageId, brand_id },
+              { transaction: t },
+            );
 
           for (const item of items) {
             const { product_id, variants = [], mainVariants = [] } = item;
@@ -1261,14 +1273,15 @@ export class BrandsService {
           }
         }
 
-        const createdItems = await this.accessPackageBrandItemsModel.bulkCreate(
-          itemRecords.map((r) => ({
-            packageBrand_id: r.packageBrand_id,
-            product_id: r.product_id,
-            quantity: r.quantity,
-          })),
-          { transaction: t, returning: true },
-        );
+        const createdItems =
+          await this.pkgRepo.accessPackageBrandItemsModel.bulkCreate(
+            itemRecords.map((r) => ({
+              packageBrand_id: r.packageBrand_id,
+              product_id: r.product_id,
+              quantity: r.quantity,
+            })),
+            { transaction: t, returning: true },
+          );
 
         const tempIdToItemId = new Map();
         for (const item of createdItems) {
@@ -1292,7 +1305,7 @@ export class BrandsService {
           .filter((x) => !!x.item_id);
 
         if (finalVariantInsert.length) {
-          await this.accessPackageBrandItemsCapacityModel.bulkCreate(
+          await this.pkgRepo.accessPackageBrandItemsCapacityModel.bulkCreate(
             finalVariantInsert,
             {
               transaction: t,
@@ -1309,7 +1322,7 @@ export class BrandsService {
           .filter((x) => !!x.item_id);
 
         if (finalSizeInsert.length) {
-          await this.accessPackageBrandItemsQtyModel.bulkCreate(
+          await this.pkgRepo.accessPackageBrandItemsQtyModel.bulkCreate(
             finalSizeInsert,
             {
               transaction: t,
@@ -1340,16 +1353,17 @@ export class BrandsService {
    */
   async getPackageCustomers(packageId: number) {
     try {
-      const packageCustomers = await this.accessPackageCustomerModel.findAll({
-        where: { package_id: packageId },
-        include: [
-          {
-            model: this.userModel,
-            as: 'customer',
-            attributes: ['id', 'email', 'firstName', 'lastName'],
-          },
-        ],
-      });
+      const packageCustomers =
+        await this.pkgRepo.accessPackageCustomerModel.findAll({
+          where: { package_id: packageId },
+          include: [
+            {
+              model: this.userRepo.userModel,
+              as: 'customer',
+              attributes: ['id', 'email', 'firstName', 'lastName'],
+            },
+          ],
+        });
 
       if (!packageCustomers || packageCustomers.length === 0) {
         return {
@@ -1358,7 +1372,9 @@ export class BrandsService {
         };
       }
 
-      const customers = packageCustomers.map((c) => c.customer).filter(Boolean);
+      const customers = packageCustomers
+        .map((c: any) => c.customer)
+        .filter(Boolean);
 
       return {
         success: true,
@@ -1377,7 +1393,7 @@ export class BrandsService {
     const t = await this.sequelize.transaction();
     try {
       const { package_id, customer_id } = body;
-      await this.accessPackageCustomerModel.destroy({
+      await this.pkgRepo.accessPackageCustomerModel.destroy({
         where: { package_id, customer_id },
         transaction: t,
       });
@@ -1404,30 +1420,28 @@ export class BrandsService {
       const { storeId } = user;
       const { package_id, emails = [] } = body;
 
-      const accessPackage = await this.accessPackageOrderModel.findByPk(
-        package_id,
-        {
+      const accessPackage: any =
+        await this.pkgRepo.accessPackageOrderModel.findByPk(package_id, {
           include: [
             {
-              model: this.accessPackageCustomerModel,
+              model: this.pkgRepo.accessPackageCustomerModel,
               as: 'customers',
               include: [
                 {
-                  model: this.userModel,
+                  model: this.userRepo.userModel,
                   as: 'customer',
                   attributes: ['id', 'email'],
                 },
               ],
             },
             {
-              model: this.storeModel,
+              model: this.storeRepo.storeModel,
               as: 'store',
               attributes: ['store_name'],
             },
           ],
           transaction: t,
-        },
-      );
+        });
 
       if (!accessPackage) throw new BadRequestException('Package not found.');
 
@@ -1437,7 +1451,7 @@ export class BrandsService {
 
       const storeName = accessPackage.store?.store_name;
 
-      const consumerRole = await this.roleModel.findOne({
+      const consumerRole = await this.userRepo.roleModel.findOne({
         where: { roleName: 'Consumer' },
         transaction: t,
       });
@@ -1454,7 +1468,7 @@ export class BrandsService {
 
         // If user not in package customers, find by email
         if (!user) {
-          user = await this.userModel.findOne({
+          user = await this.userRepo.userModel.findOne({
             where: { email: email },
             transaction: t,
           });
@@ -1467,7 +1481,7 @@ export class BrandsService {
           pswrd = generateAlphaNumericPassword();
           const hashed = hashPasswordMD5(pswrd);
 
-          user = await this.userModel.create(
+          user = await this.userRepo.userModel.create(
             {
               email,
               firstName: email.split('@')[0],
@@ -1477,16 +1491,17 @@ export class BrandsService {
           );
         }
 
-        const existingMapping = await this.userStoreMappingModel.findOne({
-          where: {
-            userId: user.id,
-            roleId: consumerRole.roleId,
-          },
-          transaction: t,
-        });
+        const existingMapping =
+          await this.userRepo.userStoreMappingModel.findOne({
+            where: {
+              userId: user.id,
+              roleId: consumerRole.roleId,
+            },
+            transaction: t,
+          });
 
         if (!existingMapping) {
-          await this.userStoreMappingModel.create(
+          await this.userRepo.userStoreMappingModel.create(
             {
               userId: user.id,
               roleId: consumerRole.roleId,
@@ -1497,7 +1512,7 @@ export class BrandsService {
         }
 
         if (!existingCustomerIds.includes(user.id)) {
-          await this.accessPackageCustomerModel.create(
+          await this.pkgRepo.accessPackageCustomerModel.create(
             {
               package_id,
               customer_id: user.id,

@@ -1,5 +1,8 @@
-import { Module, OnModuleInit } from '@nestjs/common';
-import { SequelizeModule } from '@nestjs/sequelize';
+import { Logger, Module, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { InjectConnection, SequelizeModule } from '@nestjs/sequelize';
+import { Sequelize } from 'sequelize-typescript';
+
 import { initAssociations } from './associations';
 import { ENTITIES } from './entities';
 import { DATABASE_WHAREHOUSE } from './repository';
@@ -10,7 +13,25 @@ import { DATABASE_WHAREHOUSE } from './repository';
   exports: [...DATABASE_WHAREHOUSE],
 })
 export class DatabaseModule implements OnModuleInit {
-  onModuleInit() {
+  private readonly logger = new Logger(DatabaseModule.name);
+
+  constructor(
+    @InjectConnection()
+    private readonly sequelize: Sequelize,
+
+    private readonly configService: ConfigService,
+  ) {}
+
+  async onModuleInit() {
     initAssociations();
+
+    const dbName = this.configService.get<string>('DB_NAME');
+
+    try {
+      await this.sequelize.authenticate();
+      this.logger.log(`✅ Database connected successfully: ${dbName} ✅`);
+    } catch (error) {
+      this.logger.error(`❌ Database connection failed: ${dbName}`, error);
+    }
   }
 }

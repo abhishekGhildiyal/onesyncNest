@@ -7,11 +7,15 @@ import {
   Table,
 } from 'sequelize-typescript';
 import { ORDER_ITEMS } from 'src/common/constants/enum';
+import { ProductList } from '../../product/productList';
+import { PackageBrandItemsCapacity } from './packageBrandItemCapacity';
+import { PackageBrandItemsQty } from './packageBrandItemQty';
+import { PackageBrand } from './packageBrands';
 
 @Table({
   timestamps: true,
 })
-export class PackageBrandItems extends Model<PackageBrandItems> {
+export class PackageBrandItems extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -60,4 +64,10 @@ export class PackageBrandItems extends Model<PackageBrandItems> {
     allowNull: true,
   })
   isItemReceived: string;
+
+  // Association properties (defined in packageASSOCIATION.ts)
+  declare sizeQuantities?: PackageBrandItemsQty[];
+  declare capacities?: PackageBrandItemsCapacity[];
+  declare products?: ProductList;
+  declare brand?: PackageBrand;
 }

@@ -28,19 +28,19 @@ export class Brands extends Model<Brands> {
     allowNull: false,
     field: 'brand_name',
   })
-  brandName: string;
+  declare brandName: string;
 
   @Column({
     type: DataType.ENUM(...Object.values(BRAND_STATUS)),
     allowNull: false,
   })
-  status: string;
+  declare status: string;
 
   @Column({
     type: DataType.ENUM(...Object.values(BRAND_TYPE)),
     allowNull: false,
   })
-  type: string;
+  declare type: string;
 
   @Column({
     type: DataType.INTEGER,
@@ -50,5 +50,5 @@ export class Brands extends Model<Brands> {
       key: 'store_id',
     },
   })
-  store_id: number;
+  declare store_id: number;
 }

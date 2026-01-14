@@ -28,18 +28,18 @@ export class OrdersController {
   }
 
   @Post('accessList')
-  accessList(@GetUser() user: any = { userId: 1 }, @Body() body: any) {
+  accessList(@GetUser() user: getUser, @Body() body: any) {
     return this.ordersService.accessList(user, body);
   }
 
   @Post('getAll')
-  allOrders(@GetUser() user: any = { userId: 1 }, @Body() body: any) {
+  allOrders(@GetUser() user: getUser, @Body() body: any) {
     return this.ordersService.allOrders(user, body);
   }
 
   @Get(':orderId/brands')
   getPackageBrands(
-    @GetUser() user: any = { userId: 1, roleName: 'Admin' },
+    @GetUser() user: getUser,
     @Param() params: any,
     @Query() query: any,
   ) {
@@ -62,22 +62,22 @@ export class OrdersController {
   }
 
   @Post('setItemPrice')
-  setItemPrice(@GetUser() user: any = { userId: 1 }, @Body() body: any) {
+  setItemPrice(@GetUser() user: getUser, @Body() body: any) {
     return this.ordersService.setItemPrice(user, body);
   }
 
   @Post('saveOrderAsDraft')
-  saveOrderAsDraft(@GetUser() user: any = { userId: 1 }, @Body() body: any) {
+  saveOrderAsDraft(@GetUser() user: getUser, @Body() body: any) {
     return this.ordersService.saveOrderAsDraft(user, body);
   }
 
   @Post('createOrder')
-  createOrder(@GetUser() user: any = { userId: 1 }, @Body() body: any) {
+  createOrder(@GetUser() user: getUser, @Body() body: any) {
     return this.ordersService.createOrder(user, body);
   }
 
   @Post('createManualOrder')
-  createManualOrder(@GetUser() user: any = { userId: 1 }, @Body() body: any) {
+  createManualOrder(@GetUser() user: getUser, @Body() body: any) {
     return this.ordersService.createManualOrder(user, body);
   }
 
@@ -87,25 +87,19 @@ export class OrdersController {
   }
 
   @Post(':orderId/initiate')
-  initiateOrder(
-    @Param('orderId') orderId: number,
-    @GetUser() user: any = { userId: 1 },
-  ) {
+  initiateOrder(@Param('orderId') orderId: number, @GetUser() user: getUser) {
     return this.ordersService.initiateOrder(orderId, user);
   }
 
   @Post(':orderId/markReview')
-  markReview(
-    @Param('orderId') orderId: number,
-    @GetUser() user: any = { userId: 1 },
-  ) {
+  markReview(@Param('orderId') orderId: number, @GetUser() user: getUser) {
     return this.ordersService.markReview(orderId, user);
   }
 
   @Post(':orderId/confirm')
   confirmOrder(
     @Param('orderId') orderId: number,
-    @GetUser() user: any = { userId: 1 },
+    @GetUser() user: getUser,
     @Body() body: any,
     @Headers('authorization') token: string,
   ) {
@@ -132,17 +126,17 @@ export class OrdersController {
   }
 
   @Get('orders-count')
-  orderCount(@GetUser() user: any) {
+  orderCount(@GetUser() user: getUser) {
     return this.ordersService.orderCount(user);
   }
 
   @Get('agentList/:type')
-  agentList(@GetUser() user: any = { userId: 1 }, @Param('type') type: string) {
+  agentList(@GetUser() user: getUser, @Param('type') type: string) {
     return this.ordersService.agentList(user, type);
   }
 
   @Post('startOrderProcess')
-  startOrderProcess(@GetUser() user: any = { userId: 1 }, @Body() body: any) {
+  startOrderProcess(@GetUser() user: getUser, @Body() body: any) {
     return this.ordersService.startOrderProcess(user, body);
   }
 
@@ -164,7 +158,7 @@ export class OrdersController {
   @Post('store-confirm/:orderId')
   storeConfirm(
     @Param('orderId') orderId: number,
-    @GetUser() user: any = { userId: 1 },
+    @GetUser() user: getUser,
     @Body() body: any,
     @Headers('authorization') token: string,
   ) {

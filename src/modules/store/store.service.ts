@@ -1,20 +1,17 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
 import sgClient from '@sendgrid/client';
 import { Op } from 'sequelize';
+import { PackageRepository } from 'src/db/repository/package.repository';
+import { ProductRepository } from 'src/db/repository/product.repository';
+import { StoreRepository } from 'src/db/repository/store.repository';
 import { AllMessages } from '../../common/constants/messages';
-import { Store } from '../users/entities';
-import { Label, PrintTemplate, StoreAddress, StoreLocation } from './entities';
 
 @Injectable()
 export class StoreService {
   constructor(
-    @InjectModel(Store) private storeModel: typeof Store,
-    @InjectModel(StoreAddress) private storeAddressModel: typeof StoreAddress,
-    @InjectModel(StoreLocation)
-    private storeLocationModel: typeof StoreLocation,
-    @InjectModel(Label) private labelModel: typeof Label,
-    @InjectModel(PrintTemplate) private templateModel: typeof PrintTemplate,
+    private readonly storeRepo: StoreRepository,
+    private readonly pkgRepo: PackageRepository,
+    private readonly productRepo: ProductRepository,
   ) {
     if (process.env.SENDGRID_API_KEY) {
       sgClient.setApiKey(process.env.SENDGRID_API_KEY);
@@ -22,9 +19,9 @@ export class StoreService {
   }
 
   async addAddress(user: any, body: any) {
-    if (!this.storeModel.sequelize)
+    if (!this.storeRepo.storeModel.sequelize)
       throw new BadRequestException('Sequelize not initialized');
-    const transaction = await this.storeModel.sequelize.transaction();
+    const transaction = await this.storeRepo.storeModel.sequelize.transaction();
     try {
       const { storeId } = user;
       const { storeAddress, shippingAddress = [] } = body;
@@ -32,7 +29,7 @@ export class StoreService {
       if (storeAddress) {
         const { s_country, s_address, s_address2, s_city, s_state, s_zip } =
           storeAddress;
-        await this.storeLocationModel.update(
+        await this.storeRepo.storeLocationMappingModel.update(
           {
             country: s_country,
             address1: s_address,
@@ -49,7 +46,7 @@ export class StoreService {
       }
 
       if (shippingAddress.length > 0) {
-        await this.storeAddressModel.destroy({
+        await this.storeRepo.storeAddressModel.destroy({
           where: { storeId },
           transaction,
         });
@@ -68,7 +65,9 @@ export class StoreService {
           selected: addr.selected ?? false,
         }));
 
-        await this.storeAddressModel.bulkCreate(newAddresses, { transaction });
+        await this.storeRepo.storeAddressModel.bulkCreate(newAddresses, {
+          transaction,
+        });
       }
 
       await transaction.commit();
@@ -82,11 +81,12 @@ export class StoreService {
   async getAddress(user: any) {
     try {
       const { storeId } = user;
-      const storeAddress = await this.storeLocationModel.findOne({
-        where: { store_id: storeId, default_store_location: true },
-        raw: true,
-      });
-      const shippingAddress = await this.storeAddressModel.findAll({
+      const storeAddress =
+        await this.storeRepo.storeLocationMappingModel.findOne({
+          where: { store_id: storeId, default_store_location: true },
+          raw: true,
+        });
+      const shippingAddress = await this.storeRepo.storeAddressModel.findAll({
         where: { storeId },
         raw: true,
       });
@@ -105,7 +105,7 @@ export class StoreService {
       const { email, name, address, city, state, zip, country } = body;
       const { storeId } = user;
 
-      const store = await this.storeLocationModel.findOne({
+      const store = await this.storeRepo.storeLocationMappingModel.findOne({
         where: { store_id: storeId, default_store_location: true },
         attributes: ['address1', 'city', 'country', 'province_code', 'zip'],
       });
@@ -206,7 +206,7 @@ export class StoreService {
     try {
       const { storeId } = user;
       const { apiKey, senderEmail } = body;
-      await this.storeModel.update(
+      await this.storeRepo.storeModel.update(
         { sendgridApiKey: apiKey, sendgridFromEmail: senderEmail },
         { where: { store_id: storeId } },
       );
@@ -219,7 +219,7 @@ export class StoreService {
   async getEmailAndKey(user: any) {
     try {
       const { storeId } = user;
-      const store = await this.storeModel.findOne({
+      const store = await this.storeRepo.storeModel.findOne({
         where: { store_id: storeId },
         attributes: ['sendgridApiKey', 'sendgridFromEmail'],
       });
@@ -234,7 +234,7 @@ export class StoreService {
     try {
       const { storeId } = user;
       const { templateData, label, type } = body;
-      const store = await this.storeModel.findByPk(storeId);
+      const store = await this.storeRepo.storeModel.findByPk(storeId);
       if (store) {
         const anyStore = store as any;
         if (type === 'product') {
@@ -254,7 +254,7 @@ export class StoreService {
 
   async getLabelTemplate(user: any, type: string) {
     try {
-      const labels = await this.labelModel.findAll({
+      const labels = await this.productRepo.labelModel.findAll({
         where: { store_id: user.storeId, template_type: type },
       });
       return { success: true, data: labels };
@@ -265,7 +265,7 @@ export class StoreService {
 
   async getBothLabelTemplate(user: any) {
     try {
-      const store = await this.storeModel.findByPk(user.storeId);
+      const store = await this.storeRepo.storeModel.findByPk(user.storeId);
       if (!store) throw new BadRequestException('Store not found.');
       const anyStore = store as any;
       return {
@@ -286,11 +286,11 @@ export class StoreService {
     try {
       const { storeId } = user;
       const { name, templateData, label, type } = body;
-      const existing = await this.labelModel.findOne({
+      const existing = await this.productRepo.labelModel.findOne({
         where: { store_id: storeId, label_name: name },
       });
       if (existing) throw new BadRequestException(AllMessages.LBL_EXST);
-      await this.labelModel.create({
+      await this.productRepo.labelModel.create({
         store_id: storeId,
         label_name: name + ' ' + type,
         label_dimension: label,
@@ -307,7 +307,7 @@ export class StoreService {
     try {
       const { storeId } = user;
       const { id, name, templateData, label, type } = body;
-      const dbLabel = await this.labelModel.findOne({
+      const dbLabel = await this.productRepo.labelModel.findOne({
         where: { store_id: storeId, id },
       });
       if (!dbLabel) throw new BadRequestException('Label not found.');
@@ -330,13 +330,15 @@ export class StoreService {
       if (search) whereCondition.label_name = { [Op.like]: `%${search}%` };
       if (type) whereCondition.template_type = type;
 
-      const { rows, count } = await this.labelModel.findAndCountAll({
-        where: whereCondition,
-        limit: Number(limit),
-        offset,
-        attributes: ['id', 'label_name', 'label_dimension', 'template_type'],
-        order: [['id', 'DESC']],
-      });
+      const { rows, count } = await this.productRepo.labelModel.findAndCountAll(
+        {
+          where: whereCondition,
+          limit: Number(limit),
+          offset,
+          attributes: ['id', 'label_name', 'label_dimension', 'template_type'],
+          order: [['id', 'DESC']],
+        },
+      );
 
       return {
         success: true,
@@ -354,7 +356,7 @@ export class StoreService {
 
   async getLabelTemplateById(user: any, id: number) {
     try {
-      const label = await this.labelModel.findOne({
+      const label = await this.productRepo.labelModel.findOne({
         where: { store_id: user.storeId, id },
       });
       if (!label) throw new BadRequestException('Label not found.');
@@ -366,12 +368,12 @@ export class StoreService {
 
   async deleteLabelTemplate(id: number) {
     try {
-      const assigned = await this.templateModel.findOne({
+      const assigned = await this.productRepo.templateModel.findOne({
         where: { [Op.or]: [{ display_label_id: id }, { item_label_id: id }] },
       });
       if (assigned)
         throw new BadRequestException('Assigned label cannot be deleted.');
-      await this.labelModel.destroy({ where: { id } });
+      await this.productRepo.labelModel.destroy({ where: { id } });
       return { success: true, message: AllMessages.LBL_DLT };
     } catch (err) {
       throw new BadRequestException(AllMessages.SMTHG_WRNG);

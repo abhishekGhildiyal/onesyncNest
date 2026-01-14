@@ -10,7 +10,7 @@ import {
 @Table({
   timestamps: true,
 })
-export class Invoice extends Model<Invoice> {
+export class Invoice extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

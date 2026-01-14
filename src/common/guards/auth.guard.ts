@@ -5,23 +5,12 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
 import { Request } from 'express';
-import {
-  Permission,
-  Role,
-  User,
-  UserStoreMapping,
-} from 'src/modules/users/entities';
+import { UserRepository } from 'src/db/repository/user.repository';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(
-    @InjectModel(UserStoreMapping)
-    private readonly mappingModel: typeof UserStoreMapping,
-    @InjectModel(User)
-    private readonly userModel: typeof User,
-  ) {}
+  constructor(private readonly userRepo: UserRepository) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
@@ -65,21 +54,21 @@ export class AuthGuard implements CanActivate {
     // 3️⃣ Fetch user mappings from DB using get() method
     let userMappings: any;
     try {
-      userMappings = await this.mappingModel.findAll({
+      userMappings = await this.userRepo.userStoreMappingModel.findAll({
         where: { userId, status: 1 },
         include: [
           {
-            model: User,
+            model: this.userRepo.userModel,
             as: 'user',
-            attributes: ['userId', 'email', 'firstName', 'lastName'],
+            attributes: ['id', 'email', 'firstName', 'lastName'],
           },
           {
-            model: Role,
+            model: this.userRepo.roleModel,
             as: 'role',
             attributes: ['roleId', 'roleName', 'storeId'],
             include: [
               {
-                model: Permission,
+                model: this.userRepo.permissionModel,
                 as: 'permissions',
                 through: { attributes: [] } as any,
               },
@@ -148,8 +137,8 @@ export class AuthGuard implements CanActivate {
 
     // 6️⃣ Check if user exists, fetch separately if needed
     if (!selectedMapping.user) {
-      const user = await this.userModel.findByPk(userId, {
-        attributes: ['userId', 'email', 'firstName', 'lastName'],
+      const user = await this.userRepo.userModel.findByPk(userId, {
+        attributes: ['id', 'email', 'firstName', 'lastName'],
       });
 
       if (!user) {
@@ -183,7 +172,7 @@ export class AuthGuard implements CanActivate {
 
     // 8️⃣ Attach user object
     (request as any).user = {
-      userId: selectedMapping.user.userId,
+      userId: selectedMapping.user.id,
       email: selectedMapping.user.email,
       fullName:
         `${selectedMapping.user.firstName ?? ''} ${selectedMapping.user.lastName ?? ''}`.trim(),

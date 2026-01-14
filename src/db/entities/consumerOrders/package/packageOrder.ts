@@ -7,11 +7,17 @@ import {
   Table,
 } from 'sequelize-typescript';
 import { PACKAGE_STATUS, PAYMENT_STATUS } from 'src/common/constants/enum';
+import { Store } from '../../store/store';
+import { User } from '../../user/user';
+import { PackageBrand } from './packageBrands';
+import { PackageCustomer } from './packageCustomers';
+import { PackagePayment } from './packagePayment';
+import { PackageShipment } from './packageShipment';
 
 @Table({
   timestamps: true,
 })
-export class PackageOrder extends Model<PackageOrder> {
+export class PackageOrder extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -119,4 +125,14 @@ export class PackageOrder extends Model<PackageOrder> {
     onDelete: 'SET NULL',
   })
   sales_agent_id: number;
+
+  // Association properties (defined in packageASSOCIATION.ts)
+  declare brands?: PackageBrand[];
+  declare store?: Store;
+  declare customers?: PackageCustomer[];
+  declare user?: User;
+  declare shipment?: PackageShipment[];
+  declare payment?: PackagePayment[];
+  declare employee?: User;
+  declare salesAgent?: User;
 }

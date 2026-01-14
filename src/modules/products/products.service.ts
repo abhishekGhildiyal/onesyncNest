@@ -3,46 +3,23 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
 import { Op } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { getUser } from 'src/common/interfaces/common/getUser';
+import { PackageRepository } from 'src/db/repository/package.repository';
+import { ProductRepository } from 'src/db/repository/product.repository';
+import { UserRepository } from 'src/db/repository/user.repository';
 import { BRAND_STATUS, PACKAGE_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
 import { generateOrderId } from '../../common/helpers/order-generator.helper';
 import { sortSizes } from '../../common/helpers/sort-sizes.helper';
-import { User } from '../users/entities';
-import {
-  AccessPackageBrand,
-  AccessPackageBrandItems,
-  AccessPackageBrandItemsCapacity,
-  AccessPackageBrandItemsQty,
-  AccessPackageCustomer,
-  AccessPackageOrder,
-  Brand,
-  ProductList,
-  Variant,
-} from './entities';
 
 @Injectable()
 export class ProductsService {
   constructor(
-    @InjectModel(Brand) private brandModel: typeof Brand,
-    @InjectModel(ProductList) private productModel: typeof ProductList,
-    @InjectModel(Variant) private variantModel: typeof Variant,
-    @InjectModel(AccessPackageOrder)
-    private accessOrderModel: typeof AccessPackageOrder,
-    @InjectModel(AccessPackageBrand)
-    private accessBrandModel: typeof AccessPackageBrand,
-    @InjectModel(AccessPackageBrandItems)
-    private accessBrandItemsModel: typeof AccessPackageBrandItems,
-    @InjectModel(AccessPackageCustomer)
-    private accessCustomerModel: typeof AccessPackageCustomer,
-    @InjectModel(AccessPackageBrandItemsQty)
-    private accessQtyModel: typeof AccessPackageBrandItemsQty,
-    @InjectModel(AccessPackageBrandItemsCapacity)
-    private accessCapacityModel: typeof AccessPackageBrandItemsCapacity,
-    @InjectModel(User) private userModel: typeof User,
+    private readonly productRepo: ProductRepository,
+    private readonly pkgRepo: PackageRepository,
+    private readonly userRepo: UserRepository,
     private sequelize: Sequelize,
   ) {}
 
@@ -69,7 +46,7 @@ export class ProductsService {
       const sortOrder = sort?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
 
       // ✅ Step 1: Fetch all active brands (camelCase attributes returned)
-      const brands = await this.brandModel.findAll({
+      const brands = await this.productRepo.brandModel.findAll({
         where: whereCondition,
         order: [['brandName', sortOrder]],
         attributes: ['id', 'brandName', 'type'],
@@ -82,7 +59,7 @@ export class ProductsService {
       const brandIds = brands.map((b) => b.id);
 
       // ✅ Step 2: Fetch products under these brands
-      const products = await this.productModel.findAll({
+      const products = await this.productRepo.productListModel.findAll({
         where: { brand_id: { [Op.in]: brandIds } },
         attributes: ['product_id', 'brand_id', 'itemName'],
       });
@@ -94,7 +71,7 @@ export class ProductsService {
       const productIds = products.map((p) => p.product_id);
 
       // ✅ Step 3: Fetch active variants for these products
-      const variants = await this.variantModel.findAll({
+      const variants = await this.productRepo.variantModel.findAll({
         where: {
           product_id: { [Op.in]: productIds },
           status: 1,
@@ -183,11 +160,11 @@ export class ProductsService {
   async toggleType(body: any) {
     try {
       const { type, brandId, brandName } = body;
-      const brand = await this.brandModel.findByPk(brandId);
+      const brand = await this.productRepo.brandModel.findByPk(brandId);
       if (!brand) throw new NotFoundException(AllMessages.BRAND_NF);
 
       if (brandName) {
-        const existingBrand = await this.brandModel.findOne({
+        const existingBrand = await this.productRepo.brandModel.findOne({
           where: { brandName, id: { [Op.ne]: brandId } },
         });
         if (existingBrand)
@@ -218,13 +195,13 @@ export class ProductsService {
         throw new BadRequestException('brandIds must be a non-empty array.');
       }
 
-      const products = await this.productModel.findAll({
+      const products = await this.productRepo.productListModel.findAll({
         where: { store_id: storeId, brand_id: { [Op.in]: brandIds } },
         attributes: ['product_id', 'itemName', 'image', 'brand_id', 'type'],
       });
 
       const productIds = products.map((p) => p.product_id);
-      const variants = await this.variantModel.findAll({
+      const variants = await this.productRepo.variantModel.findAll({
         where: {
           product_id: { [Op.in]: productIds },
           status: 1,
@@ -235,7 +212,7 @@ export class ProductsService {
       });
 
       const brandIdList = [...new Set(products.map((p) => p.brand_id))];
-      const brands = await this.brandModel.findAll({
+      const brands = await this.productRepo.brandModel.findAll({
         where: { id: { [Op.in]: brandIdList } },
         attributes: ['id', 'brandName'],
       });
@@ -327,11 +304,11 @@ export class ProductsService {
       const order_id = await generateOrderId({
         storeId,
         prefix: 'PKG',
-        model: this.accessOrderModel,
+        model: this.pkgRepo.accessPackageOrderModel,
         transaction: t,
       });
 
-      const pkg = await this.accessOrderModel.create(
+      const pkg = await this.pkgRepo.accessPackageOrderModel.create(
         {
           packageName,
           user_id: userId,
@@ -343,7 +320,7 @@ export class ProductsService {
       );
 
       for (const b of brands) {
-        const pBrand = await this.accessBrandModel.create(
+        const pBrand = await this.pkgRepo.accessPackageBrandModel.create(
           {
             package_id: pkg.id,
             brand_id: b.brandId,
@@ -353,7 +330,7 @@ export class ProductsService {
         );
 
         for (const item of b.items || []) {
-          const pItem = await this.accessBrandItemsModel.create(
+          const pItem = await this.pkgRepo.accessPackageBrandItemsModel.create(
             {
               product_id: item.productId,
               packageBrand_id: pBrand.id,
@@ -364,7 +341,7 @@ export class ProductsService {
 
           if (item.variants && Array.isArray(item.variants)) {
             for (const v of item.variants) {
-              await this.accessCapacityModel.create(
+              await this.pkgRepo.accessPackageBrandItemsCapacityModel.create(
                 {
                   item_id: pItem.id,
                   variant_id: v.variantId,
@@ -413,7 +390,7 @@ export class ProductsService {
         ];
       }
 
-      const customers = await this.userModel.findAll({
+      const customers = await this.userRepo.userModel.findAll({
         where: whereCondition,
         attributes: { exclude: ['password'] },
         order: [
@@ -437,10 +414,10 @@ export class ProductsService {
     const t = await this.sequelize.transaction();
     try {
       const { packageOrderId, customers = [], showPrices } = body;
-      const existingPackage = await this.accessOrderModel.findByPk(
-        packageOrderId,
-        { transaction: t },
-      );
+      const existingPackage =
+        await this.pkgRepo.accessPackageOrderModel.findByPk(packageOrderId, {
+          transaction: t,
+        });
       if (!existingPackage) throw new BadRequestException(AllMessages.PAKG_NF);
 
       // Implementation of linking logic... (as per legacy)
@@ -458,9 +435,10 @@ export class ProductsService {
     const t = await this.sequelize.transaction();
     try {
       const { packageId, brands = [], packageName } = body;
-      const existingPackage = await this.accessOrderModel.findByPk(packageId, {
-        transaction: t,
-      });
+      const existingPackage =
+        await this.pkgRepo.accessPackageOrderModel.findByPk(packageId, {
+          transaction: t,
+        });
       if (!existingPackage) throw new BadRequestException(AllMessages.PAKG_NF);
 
       if (packageName) {
@@ -480,19 +458,20 @@ export class ProductsService {
 
   async getPackageCustomers(packageId: number) {
     try {
-      const packageCustomers = await this.accessCustomerModel.findAll({
-        where: { package_id: packageId },
-        include: [
-          {
-            model: User,
-            as: 'customer',
-            attributes: ['id', 'email', 'firstName', 'lastName'],
-          },
-        ],
-      });
+      const packageCustomers =
+        await this.pkgRepo.accessPackageCustomerModel.findAll({
+          where: { package_id: packageId },
+          include: [
+            {
+              model: this.userRepo.userModel,
+              as: 'customer',
+              attributes: ['id', 'email', 'firstName', 'lastName'],
+            },
+          ],
+        });
       return {
         success: true,
-        data: packageCustomers.map((c) => c.customer).filter(Boolean),
+        data: packageCustomers.map((c: any) => c.customer).filter(Boolean),
       };
     } catch (err) {
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
@@ -503,7 +482,7 @@ export class ProductsService {
     const t = await this.sequelize.transaction();
     try {
       const { package_id, customer_id } = body;
-      await this.accessCustomerModel.destroy({
+      await this.pkgRepo.accessPackageCustomerModel.destroy({
         where: { package_id, customer_id },
         transaction: t,
       });

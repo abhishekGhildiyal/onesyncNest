@@ -1,21 +1,28 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, ForbiddenException, SetMetadata } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { InjectModel } from '@nestjs/sequelize';
-import { UserStoreMapping } from '../../modules/users/entities/user-store-mapping.entity';
+import { UserRepository } from 'src/db/repository/user.repository';
 import { ROLES } from '../constants/permissions';
-
-export const AgentType = (type: 'is_sales_agent' | 'is_logistic_agent', allowAdmin = false) =>
-  SetMetadata('agent_check', { type, allowAdmin });
+import { AGENT_CHECK_KEY } from '../decorators/agent-type.decorator';
 
 @Injectable()
 export class AgentGuard implements CanActivate {
   constructor(
-    private reflector: Reflector,
-    @InjectModel(UserStoreMapping) private userStoreMapping: typeof UserStoreMapping,
+    private readonly reflector: Reflector,
+    private readonly userRepo: UserRepository,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const check = this.reflector.get<{ type: string; allowAdmin: boolean }>('agent_check', context.getHandler());
+    const check = this.reflector.get<{
+      type: string;
+      allowAdmin: boolean;
+    }>(AGENT_CHECK_KEY, context.getHandler());
+
     if (!check) return true;
 
     const req = context.switchToHttp().getRequest();
@@ -32,7 +39,7 @@ export class AgentGuard implements CanActivate {
       }
     }
 
-    const userMap = await this.userStoreMapping.findOne({
+    const userMap = await this.userRepo.userStoreMappingModel.findOne({
       where: {
         userId: user.userId,
         storeId: user.storeId,
@@ -41,8 +48,14 @@ export class AgentGuard implements CanActivate {
     });
 
     if (!userMap) {
-      const typeLabel = check.type === 'is_sales_agent' ? 'store sales agent' : 'store logistic agent';
-      throw new ForbiddenException(`Access denied. User is not a ${typeLabel}.`);
+      const typeLabel =
+        check.type === 'is_sales_agent'
+          ? 'store sales agent'
+          : 'store logistic agent';
+
+      throw new ForbiddenException(
+        `Access denied. User is not a ${typeLabel}.`,
+      );
     }
 
     return true;

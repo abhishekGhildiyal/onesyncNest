@@ -1,46 +1,14 @@
-import { Module, Global } from '@nestjs/common';
-import { SequelizeModule } from '@nestjs/sequelize';
-import { PackageOrder, PackageBrand, PackageBrandItems, PackageBrandItemsQty, PackageBrandItemsCapacity, PackageCustomer, PackagePayment, PackageShipment } from './entities';
-import { Store, User, ConsumerShippingAddress, Role, UserStoreMapping } from '../users/entities';
-import { ProductList, Variant, Brand } from '../products/entities';
-import { StoreLocation, Invoice, Label, PrintTemplate } from '../store/entities';
-import { Inventory, ConsumerInventory, ConsumerProductList, ConsumerProductVariant, ConsumerProductsMapping } from '../inventory/entities';
-import { PackagesService } from './packages.service';
+import { Global, Module } from '@nestjs/common';
+import { ConsumerInventoryHelperService } from 'src/common/helpers/consumerInventory';
+import { DatabaseModule } from 'src/db/database.module';
 import { PackagesController } from './packages.controller';
+import { PackagesService } from './packages.service';
 
 @Global()
 @Module({
-  imports: [
-    SequelizeModule.forFeature([
-      PackageOrder,
-      PackageBrand,
-      PackageBrandItems,
-      PackageBrandItemsQty,
-      PackageBrandItemsCapacity,
-      PackageCustomer,
-      PackagePayment,
-      PackageShipment,
-      Store,
-      User,
-      ProductList,
-      Variant,
-      Brand,
-      ConsumerShippingAddress,
-      StoreLocation,
-      Inventory,
-      ConsumerInventory,
-      ConsumerProductList,
-      ConsumerProductVariant,
-      ConsumerProductsMapping,
-      Role,
-      UserStoreMapping,
-      Invoice,
-      Label,
-      PrintTemplate,
-    ]),
-  ],
-  providers: [PackagesService],
+  imports: [DatabaseModule],
+  providers: [PackagesService, ConsumerInventoryHelperService],
   controllers: [PackagesController],
-  exports: [PackagesService, SequelizeModule],
+  exports: [PackagesService],
 })
 export class PackagesModule {}

@@ -27,7 +27,7 @@ export class Permission extends Model<Permission> {
     allowNull: false,
     field: 'name',
   })
-  name: string;
+  declare name: string;
 
   @Column({
     type: DataType.BOOLEAN,
@@ -35,7 +35,7 @@ export class Permission extends Model<Permission> {
     defaultValue: false,
     field: 'is_super_admin_permission',
   })
-  isSuperAdminPermission: boolean;
+  declare isSuperAdminPermission: boolean;
 
   @Column({
     type: DataType.BOOLEAN,
@@ -43,5 +43,5 @@ export class Permission extends Model<Permission> {
     defaultValue: false,
     field: 'is_consumer_permission',
   })
-  isConsumerPermission: boolean;
+  declare isConsumerPermission: boolean;
 }

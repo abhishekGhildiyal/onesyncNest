@@ -17,7 +17,7 @@ import {
     },
   ],
 })
-export class ConsumerShippingAddress extends Model<ConsumerShippingAddress> {
+export class ConsumerShippingAddress extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

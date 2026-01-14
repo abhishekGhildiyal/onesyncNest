@@ -6,6 +6,7 @@ import {
   PrimaryKey,
   Table,
 } from 'sequelize-typescript';
+import { ProductList } from '../product/productList';
 
 @Table({
   tableName: 'tag_source',
@@ -34,4 +35,7 @@ export class TagSource extends Model<TagSource> {
     type: DataType.BOOLEAN,
   })
   web: boolean;
+
+  // Association properties (defined in packageASSOCIATION.ts)
+  declare products?: ProductList[];
 }
