@@ -29,25 +29,25 @@ export class PackageBrandItemsCapacity extends Model {
     },
     onDelete: 'CASCADE',
   })
-  item_id: number;
+  declare item_id: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  variant_id: number;
+  declare variant_id: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  maxCapacity: number;
+  declare maxCapacity: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  selectedCapacity: number;
+  declare selectedCapacity: number;
 
   // Association properties (defined in packageASSOCIATION.ts)
   declare item?: PackageBrandItems;

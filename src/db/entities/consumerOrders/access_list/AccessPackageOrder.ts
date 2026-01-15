@@ -25,49 +25,49 @@ export class AccessPackageOrder extends Model {
     type: DataType.STRING,
     allowNull: false,
   })
-  packageName: string;
+  declare packageName: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  user_id: number;
+  declare user_id: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  order_id: string;
+  declare order_id: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  store_id: number;
+  declare store_id: number;
 
   @Column({
     type: DataType.ENUM(...Object.values(PACKAGE_STATUS)),
     defaultValue: PACKAGE_STATUS.ACCESS,
     allowNull: false,
   })
-  status: string;
+  declare status: string;
 
   @Column({
     type: DataType.BOOLEAN,
     defaultValue: false,
   })
-  showPrices: boolean;
+  declare showPrices: boolean;
 
   @Column({
     type: DataType.DATE,
     defaultValue: null,
   })
-  statusChangeDate: Date;
+  declare statusChangeDate: Date;
 
   @Column({
     type: DataType.BOOLEAN,
     defaultValue: false,
     allowNull: false,
   })
-  isManualOrder: boolean;
+  declare isManualOrder: boolean;
 }

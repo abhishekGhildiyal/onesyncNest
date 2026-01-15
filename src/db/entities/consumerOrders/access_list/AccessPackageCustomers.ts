@@ -27,11 +27,11 @@ export class AccessPackageCustomer extends Model {
     },
     onDelete: 'CASCADE',
   })
-  package_id: number;
+  declare package_id: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  customer_id: number;
+  declare customer_id: number;
 }

@@ -29,90 +29,90 @@ export class PackageOrder extends Model {
     type: DataType.STRING,
     allowNull: true,
   })
-  packageName: string;
+  declare packageName: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  user_id: number;
+  declare user_id: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  order_id: string;
+  declare order_id: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  store_id: number;
+  declare store_id: number;
 
   @Column({
     type: DataType.ENUM(...Object.values(PACKAGE_STATUS)),
     defaultValue: PACKAGE_STATUS.CREATED,
     allowNull: false,
   })
-  status: string;
+  declare status: string;
 
   @Column({
     type: DataType.ENUM(...Object.values(PAYMENT_STATUS)),
     defaultValue: PAYMENT_STATUS.PENDING,
     allowNull: false,
   })
-  paymentStatus: string;
+  declare paymentStatus: string;
 
   @Column({
     type: DataType.BOOLEAN,
     defaultValue: false,
     allowNull: false,
   })
-  shipmentStatus: boolean;
+  declare shipmentStatus: boolean;
 
   @Column({
     type: DataType.BOOLEAN,
     defaultValue: false,
   })
-  showPrices: boolean;
+  declare showPrices: boolean;
 
   @Column({
     type: DataType.DATE,
     defaultValue: null,
   })
-  statusChangeDate: Date;
+  declare statusChangeDate: Date;
 
   @Column({
     type: DataType.BOOLEAN,
     defaultValue: false,
     allowNull: false,
   })
-  isManualOrder: boolean;
+  declare isManualOrder: boolean;
 
   // employee_id = is_logistic_agent
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  employee_id: number;
+  declare employee_id: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  notes: string;
+  declare notes: string;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: true,
   })
-  total_amount: number;
+  declare total_amount: number;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: true,
   })
-  received_amount: number;
+  declare received_amount: number;
 
   @Column({
     type: DataType.INTEGER,
@@ -124,7 +124,7 @@ export class PackageOrder extends Model {
     onUpdate: 'CASCADE',
     onDelete: 'SET NULL',
   })
-  sales_agent_id: number;
+  declare sales_agent_id: number;
 
   // Association properties (defined in packageASSOCIATION.ts)
   declare brands?: PackageBrand[];

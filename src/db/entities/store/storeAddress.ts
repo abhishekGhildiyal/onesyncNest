@@ -10,7 +10,7 @@ import {
 @Table({
   timestamps: true,
 })
-export class StoreAddress extends Model<StoreAddress> {
+export class StoreAddress extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -22,57 +22,57 @@ export class StoreAddress extends Model<StoreAddress> {
     type: DataType.STRING,
     allowNull: true,
   })
-  label: string;
+  declare label: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 
   @Column({
     type: DataType.BOOLEAN,
   })
-  selected: boolean;
+  declare selected: boolean;
 
   @Column({
     type: DataType.STRING,
     field: 'user_address',
   })
-  address: string;
+  declare address: string;
 
   @Column({
     type: DataType.STRING,
     field: 'user_address2',
   })
-  address2: string;
+  declare address2: string;
 
   @Column({
     type: DataType.STRING,
   })
-  city: string;
+  declare city: string;
 
   @Column({
     type: DataType.STRING,
   })
-  country: string;
+  declare country: string;
 
   @Column({
     type: DataType.STRING,
   })
-  state: string;
+  declare state: string;
 
   @Column({
     type: DataType.STRING,
   })
-  zip: string;
+  declare zip: string;
 
   @Column({
     type: DataType.BOOLEAN,
     defaultValue: false,
   })
-  isBilling: boolean;
+  declare isBilling: boolean;
 
   @Column({
     type: DataType.BOOLEAN,
@@ -80,5 +80,5 @@ export class StoreAddress extends Model<StoreAddress> {
     allowNull: false,
     defaultValue: false,
   })
-  sameAddress: boolean;
+  declare sameAddress: boolean;
 }

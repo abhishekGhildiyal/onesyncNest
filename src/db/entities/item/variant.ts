@@ -28,206 +28,206 @@ export class Variant extends Model {
   @Column({
     type: DataType.STRING,
   })
-  option1: string;
+  declare option1: string;
 
   @Column({
     type: DataType.STRING,
   })
-  option1Value: string;
+  declare option1Value: string;
 
   @Column({
     type: DataType.STRING,
   })
-  option2: string;
+  declare option2: string;
 
   @Column({
     type: DataType.STRING,
   })
-  option2Value: string;
+  declare option2Value: string;
 
   @Column({
     type: DataType.STRING,
   })
-  option3: string;
+  declare option3: string;
 
   @Column({
     type: DataType.STRING,
   })
-  option3Value: string;
+  declare option3Value: string;
 
   @Column({
     type: DataType.STRING,
   })
-  note: string;
+  declare note: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  barcode_numeric: string;
+  declare barcode_numeric: string;
 
   @Column({
     type: DataType.DATE,
   })
-  accepted_on: Date;
+  declare accepted_on: Date;
 
   @Column({
     type: DataType.INTEGER,
   })
-  store_id: number;
+  declare store_id: number;
 
   @Column({
     type: DataType.DATE,
   })
-  purchase_date: Date;
+  declare purchase_date: Date;
 
   @Column({
     type: DataType.STRING,
   })
-  purchase_order_no: string;
+  declare purchase_order_no: string;
 
   @Column({
     type: DataType.STRING,
   })
-  purchase_from_vendor: string;
+  declare purchase_from_vendor: string;
 
   @Column({
     type: DataType.BIGINT,
   })
-  order_id: number;
+  declare order_id: number;
 
   @Column({
     type: DataType.INTEGER,
   })
-  original_quantity: number;
+  declare original_quantity: number;
 
   @Column({
     type: DataType.INTEGER,
   })
-  variant_id: number;
+  declare variant_id: number;
 
   @Column({
     type: DataType.STRING(255),
   })
-  barcode: string;
+  declare barcode: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'account_type',
   })
-  accountType: number;
+  declare accountType: number;
 
   @Column({
     type: DataType.DOUBLE,
   })
-  fee: number;
+  declare fee: number;
 
   @Column({
     type: DataType.DOUBLE,
   })
-  weight: number;
+  declare weight: number;
 
   @Column({
     type: DataType.DOUBLE,
     defaultValue: 0,
     allowNull: false,
   })
-  payout: number;
+  declare payout: number;
 
   @Column({
     type: DataType.STRING,
   })
-  variant_inventory_id: string;
+  declare variant_inventory_id: string;
 
   @Column({
     type: DataType.DOUBLE,
   })
-  price: number;
+  declare price: number;
 
   @Column({
     type: DataType.STRING,
   })
-  location: string;
+  declare location: string;
 
   @Column({
     type: DataType.INTEGER,
   })
-  quantity: number;
+  declare quantity: number;
 
   @Column({
     type: DataType.STRING,
   })
-  source_name: string;
+  declare source_name: string;
 
   @Column({
     type: DataType.DOUBLE,
     field: 'purchase_price',
   })
-  cost: number;
+  declare cost: number;
 
   @Column({
     type: DataType.INTEGER,
     field: 'status',
   })
-  status: number;
+  declare status: number;
 
   @Column({
     type: DataType.BIGINT,
   })
-  payout_id: number;
+  declare payout_id: number;
 
   @Column({
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  productId: number;
+  declare productId: number;
 
   @Column({
     type: DataType.STRING,
   })
-  custom_variant_id: string;
+  declare custom_variant_id: string;
 
   @Column({
     type: DataType.STRING,
   })
-  web_barcode: string;
+  declare web_barcode: string;
 
   @Column({
     type: DataType.BIGINT,
   })
-  location_id: number;
+  declare location_id: number;
 
   @Column({
     type: DataType.DOUBLE,
   })
-  requested_price: number;
+  declare requested_price: number;
 
   @Column({
     type: DataType.STRING,
   })
-  payment_form: string;
+  declare payment_form: string;
 
   @Column({
     type: DataType.BOOLEAN,
     allowNull: true,
     defaultValue: false,
   })
-  is_shopify_order: boolean;
+  declare is_shopify_order: boolean;
 
   @Column({
     type: DataType.BOOLEAN,
     allowNull: true,
   })
-  is_consumer_order: boolean;
+  declare is_consumer_order: boolean;
 
   @Column({
     type: DataType.INTEGER,
     field: 'item_id',
   })
-  inventoryId: number;
+  declare inventoryId: number;
 
   @Column({
     type: DataType.INTEGER,
   })
-  user_id: number;
+  declare user_id: number;
 }

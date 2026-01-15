@@ -28,32 +28,32 @@ export class PackageShipment extends Model {
     },
     onDelete: 'CASCADE',
   })
-  package_id: number;
+  declare package_id: number;
 
   @Column({
     type: DataType.BOOLEAN,
     allowNull: true,
     defaultValue: false,
   })
-  localPickup: boolean;
+  declare localPickup: boolean;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
   })
-  shipment_date: Date;
+  declare shipment_date: Date;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  shipping_carrier: string;
+  declare shipping_carrier: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  tracking_number: string;
+  declare tracking_number: string;
 
   // Association properties (defined in packageASSOCIATION.ts)
   declare order?: PackageOrder;

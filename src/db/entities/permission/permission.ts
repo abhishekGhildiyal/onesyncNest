@@ -12,7 +12,7 @@ import {
   tableName: 'permissions',
   timestamps: false,
 })
-export class Permission extends Model<Permission> {
+export class Permission extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

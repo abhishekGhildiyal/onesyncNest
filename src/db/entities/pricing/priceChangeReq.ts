@@ -11,7 +11,7 @@ import {
   tableName: 'price_change_request',
   timestamps: false,
 })
-export class PriceChangeRequest extends Model<PriceChangeRequest> {
+export class PriceChangeRequest extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -24,98 +24,98 @@ export class PriceChangeRequest extends Model<PriceChangeRequest> {
     allowNull: false,
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
     field: 'user_id',
   })
-  userId: number;
+  declare userId: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
     field: 'product_name',
   })
-  productName: string;
+  declare productName: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
     field: 'item_id',
   })
-  itemId: number;
+  declare itemId: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  sku: string;
+  declare sku: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  size: string;
+  declare size: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  owner: string;
+  declare owner: string;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: false,
     field: 'old_price',
   })
-  oldPrice: number;
+  declare oldPrice: number;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: false,
     field: 'new_price',
   })
-  newPrice: number;
+  declare newPrice: number;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: false,
     field: 'price_adjustment',
   })
-  priceAdjustment: number;
+  declare priceAdjustment: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  status: string;
+  declare status: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  webBarcode: string;
+  declare webBarcode: string;
 
   @Column({
     type: DataType.DATE,
     allowNull: false,
     field: 'requested_time',
   })
-  requestedTime: Date;
+  declare requestedTime: Date;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
     field: 'status_update_time',
   })
-  statusUpdateTime: Date;
+  declare statusUpdateTime: Date;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'updating_user',
   })
-  updatingUser: string;
+  declare updatingUser: string;
 }

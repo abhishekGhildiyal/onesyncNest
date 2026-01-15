@@ -28,31 +28,31 @@ export class PackagePayment extends Model {
     },
     onDelete: 'CASCADE',
   })
-  package_id: number;
+  declare package_id: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  payment_method: string;
+  declare payment_method: string;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
   })
-  payment_date: Date;
+  declare payment_date: Date;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: true,
   })
-  total_amount: number;
+  declare total_amount: number;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: true,
   })
-  received_amount: number;
+  declare received_amount: number;
 
   // Association properties (defined in packageASSOCIATION.ts)
   declare order?: PackageOrder;

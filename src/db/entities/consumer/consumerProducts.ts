@@ -12,14 +12,14 @@ import {
 @Table({
   timestamps: true,
 })
-export class ConsumerProductList extends Model<ConsumerProductList> {
+export class ConsumerProductList extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  product_id: number;
+  declare product_id: number;
 
   @Unique
   @Column({
@@ -27,69 +27,69 @@ export class ConsumerProductList extends Model<ConsumerProductList> {
     allowNull: true,
     field: 'sku_number',
   })
-  skuNumber: string;
+  declare skuNumber: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
     field: 'item_name',
   })
-  itemName: string;
+  declare itemName: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  image: string;
+  declare image: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  category: string;
+  declare category: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  brand: string;
+  declare brand: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
     defaultValue: null,
   })
-  brand_id: number;
+  declare brand_id: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  template: string;
+  declare template: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  color: string;
+  declare color: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  handle: string;
+  declare handle: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  description: string;
+  declare description: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  type: string;
+  declare type: string;
 
   @BeforeSave
   static beforeSaveHook(product: ConsumerProductList): void {

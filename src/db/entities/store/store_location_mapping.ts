@@ -11,7 +11,7 @@ import {
   tableName: 'store_location_mapping',
   timestamps: false,
 })
-export class StoreLocationMapping extends Model<StoreLocationMapping> {
+export class StoreLocationMapping extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -23,95 +23,95 @@ export class StoreLocationMapping extends Model<StoreLocationMapping> {
     type: DataType.INTEGER,
     allowNull: false,
   })
-  store_id: number;
+  declare store_id: number;
 
   @Column({
     type: DataType.BOOLEAN,
   })
-  active: boolean;
+  declare active: boolean;
 
   @Column({
     type: DataType.STRING,
   })
-  address1: string;
+  declare address1: string;
 
   @Column({
     type: DataType.STRING,
   })
-  address2: string;
+  declare address2: string;
 
   @Column({
     type: DataType.STRING,
   })
-  admin_graphql_api_id: string;
+  declare admin_graphql_api_id: string;
 
   @Column({
     type: DataType.STRING,
   })
-  city: string;
+  declare city: string;
 
   @Column({
     type: DataType.STRING,
   })
-  country: string;
+  declare country: string;
 
   @Column({
     type: DataType.STRING,
   })
-  country_code: string;
+  declare country_code: string;
 
   @Column({
     type: DataType.BOOLEAN,
   })
-  default_store_location: boolean;
+  declare default_store_location: boolean;
 
   @Column({
     type: DataType.BOOLEAN,
   })
-  legacy: boolean;
+  declare legacy: boolean;
 
   @Column({
     type: DataType.STRING,
   })
-  localized_country_name: string;
+  declare localized_country_name: string;
 
   @Column({
     type: DataType.STRING,
   })
-  localized_province_name: string;
+  declare localized_province_name: string;
 
   @Column({
     type: DataType.STRING,
   })
-  name: string;
+  declare name: string;
 
   @Column({
     type: DataType.STRING,
   })
-  phone: string;
+  declare phone: string;
 
   @Column({
     type: DataType.STRING,
   })
-  province: string;
+  declare province: string;
 
   @Column({
     type: DataType.STRING,
   })
-  province_code: string;
+  declare province_code: string;
 
   @Column({
     type: DataType.STRING,
   })
-  shopify_location_id: string;
+  declare shopify_location_id: string;
 
   @Column({
     type: DataType.STRING,
   })
-  timezone: string;
+  declare timezone: string;
 
   @Column({
     type: DataType.INTEGER,
   })
-  zip: number;
+  declare zip: number;
 }

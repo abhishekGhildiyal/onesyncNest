@@ -13,7 +13,7 @@ import {
   createdAt: 'created_date',
   updatedAt: false,
 })
-export class OrderItems extends Model<OrderItems> {
+export class OrderItems extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -26,117 +26,117 @@ export class OrderItems extends Model<OrderItems> {
     allowNull: false,
     field: 'order_id',
   })
-  orderId: number;
+  declare orderId: number;
 
   @Column({
     type: DataType.BIGINT,
     allowNull: true,
     field: 'item_id',
   })
-  itemId: number;
+  declare itemId: number;
 
   @Column({
     type: DataType.BIGINT,
     allowNull: false,
     field: 'product_id',
   })
-  productId: number;
+  declare productId: number;
 
   @Column({
     type: DataType.BIGINT,
     allowNull: false,
     field: 'variant_id',
   })
-  variantId: number;
+  declare variantId: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  quantity: number;
+  declare quantity: number;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: false,
   })
-  price: number;
+  declare price: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  status: string;
+  declare status: string;
 
   @Column({
     type: DataType.BIGINT,
     allowNull: true,
     field: 'inventory_item_id',
   })
-  inventoryItemId: number;
+  declare inventoryItemId: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'item_name',
   })
-  itemName: string;
+  declare itemName: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  barcode: string;
+  declare barcode: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'custom_variant_id',
   })
-  customVariantId: string;
+  declare customVariantId: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  size: string;
+  declare size: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  location: string;
+  declare location: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'item_condition',
   })
-  itemCondition: string;
+  declare itemCondition: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  image: string;
+  declare image: string;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
     field: 'order_date',
   })
-  orderDate: Date;
+  declare orderDate: Date;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
     field: 'status_update_time',
   })
-  statusUpdateTime: Date;
+  declare statusUpdateTime: Date;
 }

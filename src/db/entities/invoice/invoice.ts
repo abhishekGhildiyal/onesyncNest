@@ -22,53 +22,53 @@ export class Invoice extends Model {
     type: DataType.STRING,
     allowNull: false,
   })
-  invoice_number: string;
+  declare invoice_number: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  consumer_id: number;
+  declare consumer_id: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  store_id: number;
+  declare store_id: number;
 
   @Column({
     type: DataType.DATE,
     allowNull: false,
   })
-  invoice_date: Date;
+  declare invoice_date: Date;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: true,
   })
-  total_amount: number;
+  declare total_amount: number;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: true,
   })
-  received_amount: number;
+  declare received_amount: number;
 
   @Column({
     type: DataType.STRING(4000),
     allowNull: true,
   })
-  pdf_URL: string;
+  declare pdf_URL: string;
 
   @Column({
     type: DataType.JSON,
     allowNull: true,
   })
-  invoiceItems: any;
+  declare invoiceItems: any;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  created_by: string;
+  declare created_by: string;
 }

@@ -45,7 +45,7 @@ export class ProductsService {
 
       const sortOrder = sort?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
 
-      // ✅ Step 1: Fetch all active brands (camelCase attributes returned)
+      // STEP 1: Fetch active brands
       const brands = await this.productRepo.brandModel.findAll({
         where: whereCondition,
         order: [['brandName', sortOrder]],
@@ -56,9 +56,9 @@ export class ProductsService {
         return { success: true, message: AllMessages.FTCH_BRANDS, data: {} };
       }
 
-      const brandIds = brands.map((b) => b.id);
+      const brandIds = brands.map((b) => b.get('id'));
 
-      // ✅ Step 2: Fetch products under these brands
+      // STEP 2: Fetch products under brands
       const products = await this.productRepo.productListModel.findAll({
         where: { brand_id: { [Op.in]: brandIds } },
         attributes: ['product_id', 'brand_id', 'itemName'],
@@ -68,9 +68,9 @@ export class ProductsService {
         return { success: true, message: AllMessages.FTCH_BRANDS, data: {} };
       }
 
-      const productIds = products.map((p) => p.product_id);
+      const productIds = products.map((p) => p.get('product_id'));
 
-      // ✅ Step 3: Fetch active variants for these products
+      // STEP 3: Fetch active variants with stock
       const variants = await this.productRepo.variantModel.findAll({
         where: {
           product_id: { [Op.in]: productIds },
@@ -78,68 +78,83 @@ export class ProductsService {
           quantity: { [Op.gt]: 0 },
           option1Value: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] },
         },
-        attributes: ['id', 'product_id', 'quantity'],
+        attributes: ['id', 'product_id'],
       });
 
-      const validProductIds = new Set(variants.map((v) => v.productId));
+      if (!variants.length) {
+        return { success: true, message: AllMessages.FTCH_BRANDS, data: {} };
+      }
 
-      // ✅ Step 4: Filter products -> only keep ones with valid variants
+      const validProductIds = new Set(variants.map((v) => v.get('product_id')));
+
+      // STEP 4: Filter products having valid variants
       const filteredProducts = products.filter((p) =>
-        validProductIds.has(p.product_id),
+        validProductIds.has(p.get('product_id')),
       );
 
-      // Group products by brandId
-      const productsByBrand = filteredProducts.reduce((acc, product) => {
-        if (!acc[product.brand_id]) acc[product.brand_id] = [];
-        acc[product.brand_id].push(product);
-        return acc;
-      }, {});
+      if (!filteredProducts.length) {
+        return { success: true, message: AllMessages.FTCH_BRANDS, data: {} };
+      }
 
-      // ✅ Step 5: Group brands alphabetically, excluding empty ones
-      const grouped = brands.reduce((acc, brand) => {
-        const items = productsByBrand[brand.id] || [];
-        if (items.length > 0) {
-          // Sort products inside brand
-          items.sort((a, b) =>
-            (a.itemName || '')
-              .toLowerCase()
-              .localeCompare((b.itemName || '').toLowerCase()),
-          );
-          const firstChar = (brand.brandName || '')
-            .trim()
-            .charAt(0)
-            .toUpperCase();
-          if (!acc[firstChar]) acc[firstChar] = [];
-          acc[firstChar].push({
-            ...brand.toJSON(), // ensures plain object with camelCase keys
-            products: items,
-          });
-        }
-        return acc;
-      }, {});
+      // Group products by brand
+      const productsByBrand = filteredProducts.reduce(
+        (acc, product) => {
+          const brandId = product.get('brand_id');
+          if (!acc[brandId]) acc[brandId] = [];
+          acc[brandId].push(product.toJSON());
+          return acc;
+        },
+        {} as Record<number, any[]>,
+      );
 
-      // ✅ Step 6: Sort brands alphabetically inside each group
-      // Apply sort order for groups (A..Z or Z..A)
+      // STEP 5: Group brands alphabetically
+      const grouped = brands.reduce(
+        (acc, brand) => {
+          const brandId = brand.get('id');
+          const items = productsByBrand[brandId] || [];
+
+          if (items.length > 0) {
+            const firstChar = (brand.get('brandName') || '')
+              .trim()
+              .charAt(0)
+              .toUpperCase();
+
+            if (!acc[firstChar]) acc[firstChar] = [];
+            acc[firstChar].push({
+              ...brand.toJSON(),
+              products: items.sort((a, b) =>
+                (a.itemName || '')
+                  .toLowerCase()
+                  .localeCompare((b.itemName || '').toLowerCase()),
+              ),
+            });
+          }
+
+          return acc;
+        },
+        {} as Record<string, any[]>,
+      );
+
+      // STEP 6: Sort groups and brands
       const sortedKeys = Object.keys(grouped).sort((a, b) =>
-        sortOrder === 'ASC'
-          ? a.toLowerCase().localeCompare(b.toLowerCase())
-          : b.toLowerCase().localeCompare(a.toLowerCase()),
+        sortOrder === 'ASC' ? a.localeCompare(b) : b.localeCompare(a),
       );
 
-      const sortedData = sortedKeys.reduce((acc, key) => {
-        // Sort brands inside each group
-        grouped[key].sort((a, b) =>
-          sortOrder === 'ASC'
-            ? (a.brandName || '')
-                .toLowerCase()
-                .localeCompare((b.brandName || '').toLowerCase())
-            : (b.brandName || '')
-                .toLowerCase()
-                .localeCompare((a.brandName || '').toLowerCase()),
-        );
-        acc[key] = grouped[key];
-        return acc;
-      }, {});
+      const sortedData = sortedKeys.reduce(
+        (acc, key) => {
+          acc[key] = grouped[key].sort((a, b) =>
+            sortOrder === 'ASC'
+              ? (a.brandName || '')
+                  .toLowerCase()
+                  .localeCompare((b.brandName || '').toLowerCase())
+              : (b.brandName || '')
+                  .toLowerCase()
+                  .localeCompare((a.brandName || '').toLowerCase()),
+          );
+          return acc;
+        },
+        {} as Record<string, any[]>,
+      );
 
       return {
         success: true,

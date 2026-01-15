@@ -12,7 +12,7 @@ import {
   tableName: 'template',
   timestamps: false,
 })
-export class Template extends Model<Template> {
+export class Template extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -25,13 +25,13 @@ export class Template extends Model<Template> {
     type: DataType.STRING,
     field: 'name',
   })
-  name: string;
+  declare name: string;
 
   @Column({
     type: DataType.STRING,
     field: 'category',
   })
-  category: string;
+  declare category: string;
 
   @Column({
     type: DataType.BOOLEAN,
@@ -39,7 +39,7 @@ export class Template extends Model<Template> {
     allowNull: false,
     field: 'show_location_on_barcode',
   })
-  showLocationOnBarcode: boolean;
+  declare showLocationOnBarcode: boolean;
 
   @Column({
     type: DataType.BOOLEAN,
@@ -47,7 +47,7 @@ export class Template extends Model<Template> {
     allowNull: false,
     field: 'show_price_on_barcode',
   })
-  showPriceOnBarcode: boolean;
+  declare showPriceOnBarcode: boolean;
 
   @Column({
     type: DataType.BOOLEAN,
@@ -55,26 +55,26 @@ export class Template extends Model<Template> {
     allowNull: false,
     field: 'charge_tax',
   })
-  chargeTax: boolean;
+  declare chargeTax: boolean;
 
   @Column({
     type: DataType.DOUBLE,
     field: 'tax_threshold',
   })
-  taxThreshold: number;
+  declare taxThreshold: number;
 
   @Column({
     type: DataType.DOUBLE,
     field: 'weight',
   })
-  weight: number;
+  declare weight: number;
 
   @Index('idx_store_id')
   @Column({
     type: DataType.INTEGER,
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 
   @Column({
     type: DataType.INTEGER,
@@ -85,7 +85,7 @@ export class Template extends Model<Template> {
     },
     onDelete: 'CASCADE',
   })
-  display_label_id: number;
+  declare display_label_id: number;
 
   @Column({
     type: DataType.INTEGER,
@@ -96,5 +96,5 @@ export class Template extends Model<Template> {
     },
     onDelete: 'CASCADE',
   })
-  item_label_id: number;
+  declare item_label_id: number;
 }

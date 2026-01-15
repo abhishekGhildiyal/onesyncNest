@@ -30,53 +30,53 @@ export class ConsumerShippingAddress extends Model {
     type: DataType.STRING,
     allowNull: true,
   })
-  label: string;
+  declare label: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'consumer_id',
     allowNull: false,
   })
-  consumerId: number;
+  declare consumerId: number;
 
   @Column({
     type: DataType.STRING,
     field: 'user_address',
   })
-  address: string;
+  declare address: string;
 
   @Column({
     type: DataType.STRING,
     field: 'user_address2',
   })
-  address2: string;
+  declare address2: string;
 
   @Column({
     type: DataType.STRING,
   })
-  country: string;
+  declare country: string;
 
   @Column({
     type: DataType.STRING,
   })
-  city: string;
+  declare city: string;
 
   @Column({
     type: DataType.STRING,
   })
-  state: string;
+  declare state: string;
 
   @Column({
     type: DataType.STRING,
   })
-  zip: string;
+  declare zip: string;
 
   @Column({
     type: DataType.BOOLEAN,
     allowNull: false,
     defaultValue: false,
   })
-  selected: boolean;
+  declare selected: boolean;
 
   @Column({
     type: DataType.BOOLEAN,
@@ -84,5 +84,5 @@ export class ConsumerShippingAddress extends Model {
     allowNull: false,
     defaultValue: false,
   })
-  sameAddress: boolean;
+  declare sameAddress: boolean;
 }

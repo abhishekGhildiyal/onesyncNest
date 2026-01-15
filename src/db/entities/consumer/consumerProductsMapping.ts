@@ -10,7 +10,7 @@ import {
 @Table({
   timestamps: true,
 })
-export class ConsumerProductsMapping extends Model<ConsumerProductsMapping> {
+export class ConsumerProductsMapping extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -23,11 +23,11 @@ export class ConsumerProductsMapping extends Model<ConsumerProductsMapping> {
     type: DataType.INTEGER,
     field: 'consumer_id',
   })
-  consumerId: number;
+  declare consumerId: number;
 
   @Column({
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  productId: number;
+  declare productId: number;
 }

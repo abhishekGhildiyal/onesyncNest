@@ -11,7 +11,7 @@ import {
   tableName: 'payout_details',
   timestamps: false,
 })
-export class PayoutDetails extends Model<PayoutDetails> {
+export class PayoutDetails extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -24,80 +24,80 @@ export class PayoutDetails extends Model<PayoutDetails> {
     allowNull: true,
     field: 'sold_date',
   })
-  soldDate: Date;
+  declare soldDate: Date;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'item_name',
   })
-  itemName: string;
+  declare itemName: string;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: true,
   })
-  amount: number;
+  declare amount: number;
 
   @Column({
     type: DataType.BIGINT,
     allowNull: true,
     field: 'item_id',
   })
-  itemId: number;
+  declare itemId: number;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
     field: 'payout_date',
   })
-  payoutDate: Date;
+  declare payoutDate: Date;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
     field: 'product_id',
   })
-  productId: number;
+  declare productId: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'custom_variant_id',
   })
-  customVariantId: string;
+  declare customVariantId: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  sku: string;
+  declare sku: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'condition',
   })
-  condition: string;
+  declare condition: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'web_barcode',
   })
-  webBarcode: string;
+  declare webBarcode: string;
 
   @Column({
     type: DataType.BIGINT,
     allowNull: true,
     field: 'payout_history_id',
   })
-  payoutHistoryId: number;
+  declare payoutHistoryId: number;
 }

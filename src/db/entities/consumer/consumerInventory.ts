@@ -10,7 +10,7 @@ import {
 @Table({
   timestamps: true,
 })
-export class ConsumerInventory extends Model<ConsumerInventory> {
+export class ConsumerInventory extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -22,55 +22,55 @@ export class ConsumerInventory extends Model<ConsumerInventory> {
     type: DataType.INTEGER,
     field: 'package_id',
   })
-  packageId: number;
+  declare packageId: number;
 
   @Column({
     type: DataType.INTEGER,
     field: 'consumer_id',
   })
-  consumerId: number;
+  declare consumerId: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
     field: 'sku_number',
   })
-  skuNumber: string;
+  declare skuNumber: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  productId: number;
+  declare productId: number;
 
   @Column({
     type: DataType.STRING,
   })
-  size: string;
+  declare size: string;
 
   @Column({
     type: DataType.STRING,
   })
-  type: string;
+  declare type: string;
 
   @Column({
     type: DataType.STRING,
   })
-  location: string;
+  declare location: string;
 
   @Column({
     type: DataType.INTEGER,
   })
-  price: number;
+  declare price: number;
 
   @Column({
     type: DataType.STRING,
   })
-  status: string;
+  declare status: string;
 
   @Column({
     type: DataType.DATE,
     field: 'accepted_on',
   })
-  acceptedOn: Date;
+  declare acceptedOn: Date;
 }

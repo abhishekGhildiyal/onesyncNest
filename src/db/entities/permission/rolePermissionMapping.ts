@@ -10,14 +10,14 @@ import {
   tableName: 'role_permission',
   timestamps: false,
 })
-export class RolePermission extends Model<RolePermission> {
+export class RolePermission extends Model {
   @PrimaryKey
   @Column({
     type: DataType.INTEGER,
     field: 'role_id',
     allowNull: false,
   })
-  roleId: number;
+  declare roleId: number;
 
   @PrimaryKey
   @Column({
@@ -25,5 +25,5 @@ export class RolePermission extends Model<RolePermission> {
     field: 'permission_id',
     allowNull: false,
   })
-  permissionId: number;
+  declare permissionId: number;
 }

@@ -27,18 +27,18 @@ export class AccessPackageBrand extends Model {
     },
     onDelete: 'CASCADE',
   })
-  package_id: number;
+  declare package_id: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  brand_id: number;
+  declare brand_id: number;
 
   @Column({
     type: DataType.BOOLEAN,
     allowNull: true,
     defaultValue: false,
   })
-  selected: boolean;
+  declare selected: boolean;
 }

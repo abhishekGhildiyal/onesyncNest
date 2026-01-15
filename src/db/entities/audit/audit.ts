@@ -26,77 +26,77 @@ export class Audit extends Model {
     allowNull: true,
     field: 'original_variant_id',
   })
-  originalVariantId: string;
+  declare originalVariantId: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'sku',
   })
-  sku: string;
+  declare sku: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'item_name',
   })
-  itemName: string;
+  declare itemName: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'shopify_id',
   })
-  shopifyId: string;
+  declare shopifyId: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'inventory_item_id',
   })
-  inventoryItemId: string;
+  declare inventoryItemId: string;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: true,
     field: 'price',
   })
-  price: number;
+  declare price: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'product_id',
   })
-  productId: string;
+  declare productId: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'audit_type',
   })
-  auditType: string;
+  declare auditType: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'option1',
   })
-  option1: string;
+  declare option1: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'option2',
   })
-  option2: string;
+  declare option2: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'option3',
   })
-  option3: string;
+  declare option3: string;
 
   @Column({
     type: DataType.STRING(255),

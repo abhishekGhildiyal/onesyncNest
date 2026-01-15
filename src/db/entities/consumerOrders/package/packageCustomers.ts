@@ -29,13 +29,13 @@ export class PackageCustomer extends Model {
     },
     onDelete: 'CASCADE',
   })
-  package_id: number;
+  declare package_id: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: false,
   })
-  customer_id: number;
+  declare customer_id: number;
 
   // Association properties (defined in packageASSOCIATION.ts)
   declare order?: PackageOrder;

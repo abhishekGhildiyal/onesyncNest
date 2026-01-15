@@ -11,7 +11,7 @@ import {
   tableName: 'payout_record',
   timestamps: false,
 })
-export class PayoutRecord extends Model<PayoutRecord> {
+export class PayoutRecord extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -24,71 +24,71 @@ export class PayoutRecord extends Model<PayoutRecord> {
     type: DataType.STRING,
     field: 'customvariant_id',
   })
-  customvariantId: string;
+  declare customvariantId: string;
 
   @Column({
     type: DataType.STRING,
     field: 'recipient_name',
   })
-  recipientName: string;
+  declare recipientName: string;
 
   @Column({
     type: DataType.STRING,
     field: 'recipient_email',
   })
-  recipientEmail: string;
+  declare recipientEmail: string;
 
   @Column({
     type: DataType.BOOLEAN,
     field: 'success',
   })
-  success: boolean;
+  declare success: boolean;
 
   @Column({
     type: DataType.STRING,
     field: 'message',
   })
-  message: string;
+  declare message: string;
 
   @Column({
     type: DataType.STRING,
     field: 'item_name',
   })
-  itemName: string;
+  declare itemName: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'user_id',
   })
-  userId: number;
+  declare userId: number;
 
   @Column({
     type: DataType.STRING,
     field: 'status',
   })
-  status: string;
+  declare status: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  productId: number;
+  declare productId: number;
 
   @Column({
     type: DataType.DOUBLE,
     field: 'amount',
   })
-  amount: number;
+  declare amount: number;
 
   @Column({
     type: DataType.BIGINT,
     field: 'item_id',
   })
-  itemId: number;
+  declare itemId: number;
 
   @Column({
     type: DataType.DATE,
     field: 'payout_date',
   })
-  payoutDate: Date;
+  declare payoutDate: Date;
 }

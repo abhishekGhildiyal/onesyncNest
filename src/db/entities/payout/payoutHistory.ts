@@ -11,7 +11,7 @@ import {
   tableName: 'payout_history',
   timestamps: false,
 })
-export class PayoutHistory extends Model<PayoutHistory> {
+export class PayoutHistory extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -24,71 +24,71 @@ export class PayoutHistory extends Model<PayoutHistory> {
     type: DataType.STRING,
     field: 'user_name',
   })
-  userName: string;
+  declare userName: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'user_id',
   })
-  userId: number;
+  declare userId: number;
 
   @Column({
     type: DataType.DOUBLE,
     field: 'amount',
   })
-  amount: number;
+  declare amount: number;
 
   @Column({
     type: DataType.INTEGER,
     field: 'items',
   })
-  items: number;
+  declare items: number;
 
   @Column({
     type: DataType.STRING,
     field: 'method',
   })
-  Method: string;
+  declare Method: string;
 
   @Column({
     type: DataType.DATE,
     field: 'payout_date',
   })
-  payoutDate: Date;
+  declare payoutDate: Date;
 
   @Column({
     type: DataType.STRING,
     field: 'email',
   })
-  email: string;
+  declare email: string;
 
   @Column({
     type: DataType.STRING,
     field: 'memo',
   })
-  memo: string;
+  declare memo: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 
   @Column({
     type: DataType.STRING,
     field: 'sku',
   })
-  sku: string;
+  declare sku: string;
 
   @Column({
     type: DataType.STRING,
     field: 'condition',
   })
-  condition: string; // handle SQL reserved keyword
+  declare condition: string; // handle SQL reserved keyword
 
   @Column({
     type: DataType.STRING,
     field: 'web_barcode',
   })
-  webBarcode: string;
+  declare webBarcode: string;
 }

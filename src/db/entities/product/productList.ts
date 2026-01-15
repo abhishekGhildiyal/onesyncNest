@@ -41,58 +41,58 @@ export class ProductList extends Model {
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  product_id: number;
+  declare product_id: number;
 
   @Column({
     type: DataType.STRING(255),
     allowNull: true,
     field: 'sku_number',
   })
-  skuNumber: string;
+  declare skuNumber: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
     field: 'item_name',
   })
-  itemName: string;
+  declare itemName: string;
 
   @Column({
     type: DataType.STRING,
   })
-  image: string;
+  declare image: string;
 
   @Column({
     type: DataType.STRING,
   })
-  category: string;
+  declare category: string;
 
   @Column({
     type: DataType.STRING,
   })
-  brand: string;
+  declare brand: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
     defaultValue: null,
   })
-  brand_id: number;
+  declare brand_id: number;
 
   @Column({
     type: DataType.STRING,
   })
-  template: string;
+  declare template: string;
 
   @Column({
     type: DataType.STRING,
   })
-  color: string;
+  declare color: string;
 
   @Column({
     type: DataType.STRING,
   })
-  handle: string;
+  declare handle: string;
 
   @Column({
     type: DataType.INTEGER,
@@ -103,66 +103,66 @@ export class ProductList extends Model {
     },
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 
   @Column({
     type: DataType.BOOLEAN,
     defaultValue: false,
     field: 'is_store_only',
   })
-  isStoreOnly: boolean;
+  declare isStoreOnly: boolean;
 
   @Column({
     type: DataType.INTEGER,
   })
-  stock: number;
+  declare stock: number;
 
   @Column({
     type: DataType.INTEGER,
   })
-  sold: number;
+  declare sold: number;
 
   @Column({
     type: DataType.INTEGER,
     field: 'need_approval',
   })
-  needApproval: number;
+  declare needApproval: number;
 
   @Column({
     type: DataType.STRING,
   })
-  description: string;
+  declare description: string;
 
   @Column({
     type: DataType.STRING,
   })
-  type: string;
+  declare type: string;
 
   @Column({
     type: DataType.STRING,
     field: 'stockxstyle_id',
   })
-  stockXStyleId: string;
+  declare stockXStyleId: string;
 
   @Column({
     type: DataType.STRING,
     field: 'stockxsize_chart',
   })
-  stockXSizeChart: string;
+  declare stockXSizeChart: string;
 
   @Column({
     type: DataType.DATE,
     field: 'created_by',
     defaultValue: DataType.NOW,
   })
-  createdBy: Date;
+  declare createdBy: Date;
 
   @Column({
     type: DataType.DATE,
     field: 'updated_by',
     defaultValue: DataType.NOW,
   })
-  updatedBy: Date;
+  declare updatedBy: Date;
 
   // Association properties (defined in packageASSOCIATION.ts)
   declare tags?: TagSource[];

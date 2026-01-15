@@ -15,7 +15,7 @@ import { BRAND_STATUS, BRAND_TYPE } from 'src/common/constants/enum';
   createdAt: 'created_at',
   updatedAt: 'updated_at',
 })
-export class Brands extends Model<Brands> {
+export class Brands extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

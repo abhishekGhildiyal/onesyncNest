@@ -26,30 +26,30 @@ export class Customers extends Model {
     type: DataType.STRING,
     field: 'first_name',
   })
-  first_name: string;
+  declare first_name: string;
 
   @Column({
     type: DataType.STRING,
     field: 'last_name',
   })
-  last_name: string;
+  declare last_name: string;
 
   @Unique
   @Column({
     type: DataType.STRING,
     field: 'phone_number',
   })
-  phone_number: string;
+  declare phone_number: string;
 
   @Unique
   @Column({
     type: DataType.STRING,
   })
-  email: string;
+  declare email: string;
 
   @Column({
     type: DataType.STRING,
     field: 'user_secret_key',
   })
-  password: string;
+  declare password: string;
 }

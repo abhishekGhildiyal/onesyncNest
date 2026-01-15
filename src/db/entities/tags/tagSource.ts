@@ -13,7 +13,7 @@ import { ProductList } from '../product/productList';
   freezeTableName: true,
   timestamps: false,
 })
-export class TagSource extends Model<TagSource> {
+export class TagSource extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -24,17 +24,17 @@ export class TagSource extends Model<TagSource> {
   @Column({
     type: DataType.STRING,
   })
-  input: string;
+  declare input: string;
 
   @Column({
     type: DataType.BOOLEAN,
   })
-  pos: boolean;
+  declare pos: boolean;
 
   @Column({
     type: DataType.BOOLEAN,
   })
-  web: boolean;
+  declare web: boolean;
 
   // Association properties (defined in packageASSOCIATION.ts)
   declare products?: ProductList[];

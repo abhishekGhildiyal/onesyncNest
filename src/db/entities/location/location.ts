@@ -15,7 +15,7 @@ import {
   tableName: 'location',
   timestamps: false,
 })
-export class Location extends Model<Location> {
+export class Location extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -26,7 +26,7 @@ export class Location extends Model<Location> {
   @Column({
     type: DataType.STRING,
   })
-  name: string;
+  declare name: string;
 
   @Index('idx_location_store_id')
   @Column({
@@ -34,7 +34,7 @@ export class Location extends Model<Location> {
     allowNull: false,
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 
   // Self-referencing foreign key: points to another location in the same table
   // This creates the parent-child hierarchy
@@ -44,7 +44,7 @@ export class Location extends Model<Location> {
     allowNull: true, // null = root location (no parent)
     field: 'parent_id',
   })
-  parentId: number;
+  declare parentId: number;
 
   // ONE location can have MANY child locations
   // Example: Warehouse → [Aisle A, Aisle B, Aisle C]
@@ -53,12 +53,12 @@ export class Location extends Model<Location> {
     foreignKey: 'parentId', // Children have this location's id as their parentId
     onDelete: 'CASCADE', // Delete children when parent is deleted
   })
-  children: Location[];
+  declare children: Location[];
 
   // ONE location can belong to ONE parent location
   // Example: Shelf 1 → belongs to → Aisle A
   @BelongsTo(() => Location, {
     foreignKey: 'parentId', // This location's parent is referenced by parentId
   })
-  parent: Location;
+  declare parent: Location;
 }

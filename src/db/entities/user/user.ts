@@ -109,15 +109,15 @@ export class User extends Model {
 
   // Transient field (not in database)
   // Use class property or getter for transient fields
-  storeList?: any[];
+  declare storeList?: any[];
 
   // Relationships
   @HasMany(() => Authenticate)
-  authentications: Authenticate[];
+  declare authentications: Authenticate[];
 
   // Association properties (defined in packageASSOCIATION.ts)
-  packageCustomers: PackageCustomer[];
+  declare packageCustomers: PackageCustomer[];
 
   // Associations from userASSOCIATION.ts
-  mappings: UserStoreMapping[];
+  declare mappings: UserStoreMapping[];
 }

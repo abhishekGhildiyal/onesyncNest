@@ -14,7 +14,7 @@ import { User } from '../user/user';
   tableName: 'authenticate',
   timestamps: true,
 })
-export class Authenticate extends Model<Authenticate> {
+export class Authenticate extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -26,25 +26,25 @@ export class Authenticate extends Model<Authenticate> {
     type: DataType.STRING,
     allowNull: false,
   })
-  userName: string;
+  declare userName: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  password: string;
+  declare password: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  token: string;
+  declare token: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  storeId: number;
+  declare storeId: number;
 
   @ForeignKey(() => User)
   @Column({
@@ -52,8 +52,8 @@ export class Authenticate extends Model<Authenticate> {
     allowNull: true,
     field: 'user_id',
   })
-  userId: number;
+  declare userId: number;
 
   @BelongsTo(() => User)
-  user: User;
+  declare user: User;
 }

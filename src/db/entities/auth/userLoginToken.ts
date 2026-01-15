@@ -11,7 +11,7 @@ import {
   tableName: 'user_login_token',
   timestamps: false,
 })
-export class UserLoginToken extends Model<UserLoginToken> {
+export class UserLoginToken extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -24,45 +24,45 @@ export class UserLoginToken extends Model<UserLoginToken> {
     type: DataType.INTEGER,
     field: 'user_id',
   })
-  userId: number;
+  declare userId: number;
 
   @Column({
     type: DataType.INTEGER,
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 
   @Column({
     type: DataType.INTEGER,
     field: 'status',
   })
-  status: number;
+  declare status: number;
 
   @Column({
     type: DataType.STRING,
     field: 'expire_time',
   })
-  expireTime: string;
+  declare expireTime: string;
 
   @Column({
     type: DataType.STRING,
     field: 'creation_time',
   })
-  createTime: string;
+  declare createTime: string;
 
   @Column({
     type: DataType.STRING,
     field: 'primary_token',
   })
-  token: string;
+  declare token: string;
 
   @Column({
     type: DataType.VIRTUAL,
   })
-  role: string;
+  declare role: string;
 
   @Column({
     type: DataType.VIRTUAL,
   })
-  feePercentage: number;
+  declare feePercentage: number;
 }

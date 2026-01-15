@@ -15,7 +15,7 @@ import {
   tableName: 'template_option',
   timestamps: false,
 })
-export class TemplateOption extends Model<TemplateOption> {
+export class TemplateOption extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -28,12 +28,12 @@ export class TemplateOption extends Model<TemplateOption> {
     allowNull: false,
     field: 'option_key',
   })
-  key: string;
+  declare key: string;
 
   @HasMany(() => TemplateOptionValue, {
     foreignKey: 'option_id',
   })
-  values: TemplateOptionValue[];
+  declare values: TemplateOptionValue[];
 }
 
 // ==================== TemplateOptionValue Entity ====================
@@ -41,7 +41,7 @@ export class TemplateOption extends Model<TemplateOption> {
   tableName: 'template_option_values',
   timestamps: false,
 })
-export class TemplateOptionValue extends Model<TemplateOptionValue> {
+export class TemplateOptionValue extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -55,17 +55,17 @@ export class TemplateOptionValue extends Model<TemplateOptionValue> {
     allowNull: false,
     field: 'option_id',
   })
-  optionId: number;
+  declare optionId: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
     field: 'option_value',
   })
-  value: string;
+  declare value: string;
 
   @BelongsTo(() => TemplateOption, {
     foreignKey: 'option_id',
   })
-  option: TemplateOption;
+  declare option: TemplateOption;
 }

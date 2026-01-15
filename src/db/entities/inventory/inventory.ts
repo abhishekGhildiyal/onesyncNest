@@ -27,97 +27,97 @@ export class Inventory extends Model {
     allowNull: false,
     field: 'sku_number',
   })
-  skuNumber: string | null;
+  declare skuNumber: string | null;
 
   @Column({
     type: DataType.DATE,
     field: 'sold_on',
   })
-  soldOn: Date | null;
+  declare soldOn: Date | null;
 
   @Column({
     type: DataType.STRING,
     field: 'item_name',
   })
-  itemName: string | null;
+  declare itemName: string | null;
 
   @Column({
     type: DataType.STRING,
   })
-  color: string | null;
+  declare color: string | null;
 
   @Column({
     type: DataType.STRING,
     field: 'display_name',
   })
-  displayName: string | null;
+  declare displayName: string | null;
 
   @Column({
     type: DataType.STRING,
   })
-  image: string | null;
+  declare image: string | null;
 
   @Column({
     type: DataType.STRING,
   })
-  category: string | null;
+  declare category: string | null;
 
   @Column({
     type: DataType.STRING,
     field: 'shopify_status',
   })
-  shopifyStatus: string | null;
+  declare shopifyStatus: string | null;
 
   @Column({
     type: DataType.STRING,
     field: 'published_scope',
   })
-  publishedScope: string | null;
+  declare publishedScope: string | null;
 
   @Column({
     type: DataType.INTEGER,
     field: 'store_id',
   })
-  storeId: number | null;
+  declare storeId: number | null;
 
   @Column({
     type: DataType.INTEGER,
     field: 'account_type',
   })
-  accountType: number | null;
+  declare accountType: number | null;
 
   @Column({
     type: DataType.STRING,
     field: 'web_barcode',
   })
-  webBarcode: string | null;
+  declare webBarcode: string | null;
 
   @Column({
     type: DataType.STRING,
   })
-  brand: string | null;
+  declare brand: string | null;
 
   @Column({
     type: DataType.STRING,
   })
-  template: string | null;
+  declare template: string | null;
 
   @Column({
     type: DataType.STRING,
   })
-  type: string | null;
+  declare type: string | null;
 
   @Column({
     type: DataType.STRING,
     field: 'shopify_id',
   })
-  shopifyId: string;
+  declare shopifyId: string;
 
   @Column({
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  productId: number;
+  declare productId: number;
 
   @Column({
     type: DataType.BOOLEAN,
@@ -125,17 +125,17 @@ export class Inventory extends Model {
     allowNull: false,
     field: 'is_visible',
   })
-  isVisible: boolean;
+  declare isVisible: boolean;
 
   @Column({
     type: DataType.DATE,
     field: 'accepted_on',
   })
-  acceptedOn: Date;
+  declare acceptedOn: Date;
 
   @Column({
     type: DataType.INTEGER,
     field: 'user_id',
   })
-  user_id: number;
+  declare user_id: number;
 }

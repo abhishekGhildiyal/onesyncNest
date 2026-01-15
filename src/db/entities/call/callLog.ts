@@ -12,7 +12,7 @@ import {
   tableName: 'calllog',
   timestamps: false,
 })
-export class CallLog extends Model<CallLog> {
+export class CallLog extends Model {
   @PrimaryKey
   @AutoIncrement
   @Index({ unique: true, name: 'id_unique' })
@@ -26,40 +26,40 @@ export class CallLog extends Model<CallLog> {
     allowNull: true,
     field: 'request_url',
   })
-  requestUrl: string;
+  declare requestUrl: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'request_method',
   })
-  requestMethod: string;
+  declare requestMethod: string;
 
   @Column({
     type: DataType.TEXT,
     allowNull: true,
     field: 'request_body',
   })
-  requestBody: string;
+  declare requestBody: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'response_status',
   })
-  responseStatus: string;
+  declare responseStatus: string;
 
   @Column({
     type: DataType.TEXT,
     allowNull: true,
     field: 'response_body',
   })
-  responseBody: string;
+  declare responseBody: string;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
     field: 'timestamp',
   })
-  timestamp: Date;
+  declare timestamp: Date;
 }

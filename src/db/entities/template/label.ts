@@ -25,35 +25,35 @@ export class Label extends Model {
     type: DataType.INTEGER,
     allowNull: false,
   })
-  store_id: number;
+  declare store_id: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  label_name: string;
+  declare label_name: string;
 
   @Column({
     type: DataType.ENUM(...Object.values(LABEL_TYPES)),
     allowNull: false,
   })
-  template_type: string;
+  declare template_type: string;
 
   @Column({
     type: DataType.JSON,
     allowNull: true,
   })
-  label_dimension: any;
+  declare label_dimension: any;
 
   @Column({
     type: DataType.JSON,
     allowNull: true,
   })
-  label_template: any;
+  declare label_template: any;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
   })
-  deleted_at: Date;
+  declare deleted_at: Date;
 }

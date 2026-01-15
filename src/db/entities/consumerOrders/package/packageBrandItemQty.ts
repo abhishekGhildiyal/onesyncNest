@@ -29,37 +29,37 @@ export class PackageBrandItemsQty extends Model {
     },
     onDelete: 'CASCADE',
   })
-  item_id: number;
+  declare item_id: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  variant_size: string;
+  declare variant_size: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  maxCapacity: number;
+  declare maxCapacity: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  selectedCapacity: number;
+  declare selectedCapacity: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  shortage: number;
+  declare shortage: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  receivedQuantity: number;
+  declare receivedQuantity: number;
 
   // Association properties (defined in packageASSOCIATION.ts)
   declare qtyItem?: PackageBrandItems;

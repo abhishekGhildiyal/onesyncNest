@@ -11,7 +11,7 @@ import {
   tableName: 'shopify_order_request',
   timestamps: false,
 })
-export class ShopifyOrderRequest extends Model<ShopifyOrderRequest> {
+export class ShopifyOrderRequest extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({
@@ -24,5 +24,5 @@ export class ShopifyOrderRequest extends Model<ShopifyOrderRequest> {
     type: DataType.STRING,
     field: 'shopify_event_id',
   })
-  shopifyEventId: string;
+  declare shopifyEventId: string;
 }

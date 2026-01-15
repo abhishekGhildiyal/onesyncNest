@@ -27,7 +27,7 @@ export class PackageBrandItems extends Model {
     type: DataType.INTEGER,
     allowNull: false,
   })
-  product_id: number;
+  declare product_id: number;
 
   @Column({
     type: DataType.INTEGER,
@@ -38,32 +38,32 @@ export class PackageBrandItems extends Model {
     },
     onDelete: 'CASCADE',
   })
-  packageBrand_id: number;
+  declare packageBrand_id: number;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: true,
   })
-  price: number;
+  declare price: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  quantity: number;
+  declare quantity: number;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  consumerDemand: number;
+  declare consumerDemand: number;
 
   @Column({
     type: DataType.ENUM(...Object.values(ORDER_ITEMS)),
     defaultValue: null,
     allowNull: true,
   })
-  isItemReceived: string;
+  declare isItemReceived: string;
 
   // Association properties (defined in packageASSOCIATION.ts)
   declare sizeQuantities?: PackageBrandItemsQty[];

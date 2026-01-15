@@ -4,70 +4,70 @@ import { Column, DataType, Model, Table } from 'sequelize-typescript';
   tableName: 'recipient_details',
   timestamps: false,
 })
-export class RecipientDetails extends Model<RecipientDetails> {
+export class RecipientDetails extends Model {
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  recipientName: string;
+  declare recipientName: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  recipientEmail: string;
+  declare recipientEmail: string;
 
   @Column({
     type: DataType.DOUBLE,
     allowNull: true,
   })
-  amount: number;
+  declare amount: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  variantId: string;
+  declare variantId: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  userId: number;
+  declare userId: number;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  status: string;
+  declare status: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  itemName: string;
+  declare itemName: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  productId: number;
+  declare productId: number;
 
   @Column({
     type: DataType.BIGINT,
     allowNull: true,
   })
-  itemId: number;
+  declare itemId: number;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
   })
-  soldDate: Date;
+  declare soldDate: Date;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  memo: string;
+  declare memo: string;
 }

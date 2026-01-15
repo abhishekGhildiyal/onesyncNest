@@ -24,7 +24,7 @@ export class InventoryRequest extends Model {
     type: DataType.STRING,
     allowNull: false,
   })
-  sku: string;
+  declare sku: string;
 
   @Index
   @Column({
@@ -32,65 +32,65 @@ export class InventoryRequest extends Model {
     allowNull: false,
     field: 'item_id',
   })
-  itemId: string;
+  declare itemId: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  size: string;
+  declare size: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  location: string;
+  declare location: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'requesting_user',
   })
-  requestingUser: string;
+  declare requestingUser: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'item_name',
   })
-  itemName: string;
+  declare itemName: string;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
     field: 'store_id',
   })
-  storeId: number;
+  declare storeId: number;
 
   @Column({
     type: DataType.DATE,
     allowNull: false,
     field: 'requested_time',
   })
-  requestedTime: Date;
+  declare requestedTime: Date;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  status: string;
+  declare status: string;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
     field: 'status_update_time',
   })
-  statusUpdateTime: Date;
+  declare statusUpdateTime: Date;
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'updating_user',
   })
-  updatingUser: string;
+  declare updatingUser: string;
 }

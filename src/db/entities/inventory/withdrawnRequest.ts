@@ -19,62 +19,62 @@ export class WithdrawnRequest extends Model {
   declare id: number;
 
   @Column({ type: DataType.INTEGER, allowNull: true })
-  inventory_id: number;
+  declare inventory_id: number;
 
   @Column({ type: DataType.INTEGER, allowNull: true })
-  product_id: number;
+  declare product_id: number;
 
   @Column({ type: DataType.INTEGER, allowNull: true })
-  variant_id: number;
+  declare variant_id: number;
 
   @Column({ type: DataType.INTEGER, allowNull: true })
-  item_id: number;
+  declare item_id: number;
 
   @Column({ type: DataType.INTEGER, allowNull: true })
-  store_id: number;
+  declare store_id: number;
 
   @Column({ type: DataType.STRING(255), allowNull: true })
-  status: string;
+  declare status: string;
 
   @Column({ type: DataType.STRING(255), allowNull: true })
-  owner: string;
+  declare owner: string;
 
   @Column({ type: DataType.STRING(255), allowNull: true })
-  product_name: string;
+  declare product_name: string;
 
   @Column({ type: DataType.STRING(255), allowNull: true })
-  sku: string;
+  declare sku: string;
 
   @Column({ type: DataType.STRING(255), allowNull: true })
-  barcode: string;
+  declare barcode: string;
 
   @Column({ type: DataType.STRING(255), allowNull: true })
-  box_condition: string;
+  declare box_condition: string;
 
   @Column({ type: DataType.STRING(255), allowNull: true })
-  item_condition: string;
+  declare item_condition: string;
 
   @Column({ type: DataType.STRING(255), allowNull: true })
-  product_type: string;
+  declare product_type: string;
 
   @Column({ type: DataType.STRING(255), allowNull: true })
-  size: string;
+  declare size: string;
 
   @Column({ type: DataType.DOUBLE, allowNull: true })
-  price: number;
+  declare price: number;
 
   @Column({ type: DataType.DATE(6), allowNull: true })
-  requested_on: Date;
+  declare requested_on: Date;
 
   @Column({ type: DataType.DATE(6), allowNull: true })
-  approved_on: Date;
+  declare approved_on: Date;
 
   @Column({ type: DataType.DATE(6), allowNull: true })
-  accepted_on: Date;
+  declare accepted_on: Date;
 
   @Column({ type: DataType.DATE(6), allowNull: true })
-  status_updated_on: Date;
+  declare status_updated_on: Date;
 
   @Column({ type: DataType.STRING(255), allowNull: true })
-  updating_user: string;
+  declare updating_user: string;
 }
