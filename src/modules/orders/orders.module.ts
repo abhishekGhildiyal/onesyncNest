@@ -4,11 +4,12 @@ import { ReducePackageQuantity } from 'src/common/helpers/reduce-package-qty.hel
 import { MarkInventorySold } from 'src/common/helpers/sold-inventory.helper';
 import { DatabaseModule } from 'src/db/database.module';
 import { ShopifyModule } from '../shopify/shopify.module';
+import { SocketModule } from '../socket/socket.module';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
 @Module({
-  imports: [ShopifyModule, DatabaseModule],
+  imports: [ShopifyModule, DatabaseModule, SocketModule],
   providers: [
     OrdersService,
     ManualOrderHelperService,

@@ -30,33 +30,27 @@ export class ManualOrderHelperService {
     customerDetail,
     transaction: t,
   }: {
-    accessPackageId: number;
-    userId: number;
+    accessPackageId: string | number;
+    userId: string | number;
     emails: string[];
     brands: any[];
-    date: Date;
+    date: string;
     customerDetail: any;
     transaction: any;
   }) {
     // Fetch Access Package Order just to get base info
-    const accessOrder = await this.pkgRepo.accessPackageOrderModel.findByPk(
-      accessPackageId,
-      {
-        transaction: t,
-      },
-    );
+    const accessOrder = await this.pkgRepo.accessPackageOrderModel.findByPk(accessPackageId, {
+      transaction: t,
+    });
 
     if (!accessOrder) {
       throw new BadRequestException(AllMessages.PAKG_NF);
     }
 
-    const store = await this.storeRepo.storeModel.findByPk(
-      accessOrder.store_id,
-      {
-        attributes: ['store_code', 'store_name', 'store_id', 'store_icon'],
-        transaction: t,
-      },
-    );
+    const store = await this.storeRepo.storeModel.findByPk(accessOrder.store_id, {
+      attributes: ['store_code', 'store_name', 'store_id', 'store_icon'],
+      transaction: t,
+    });
 
     if (!store) {
       throw new BadRequestException('Store not found.');
@@ -97,13 +91,9 @@ export class ManualOrderHelperService {
       transaction: t,
     });
 
-    const emailToUserMap = new Map(
-      existingUsers.map((u) => [u.email.toLowerCase(), u]),
-    );
+    const emailToUserMap = new Map(existingUsers.map((u) => [u.email.toLowerCase(), u]));
 
-    const newUserEmails = lowerEmails.filter(
-      (email) => !emailToUserMap.has(email),
-    );
+    const newUserEmails = lowerEmails.filter((email) => !emailToUserMap.has(email));
 
     const newUsers = newUserEmails.map((email) => {
       const plainPassword = generateAlphaNumericPassword();
@@ -138,8 +128,7 @@ export class ManualOrderHelperService {
     if (customerDetail) {
       const { firstName, lastName, phone, billingAddress } = customerDetail;
       if (billingAddress) {
-        const { b_address, b_address2, b_country, b_city, b_state, b_zip } =
-          billingAddress;
+        const { b_address, b_address2, b_country, b_city, b_state, b_zip } = billingAddress;
 
         for (const email of lowerEmails) {
           const user = emailToUserMap.get(email);
@@ -215,9 +204,7 @@ export class ManualOrderHelperService {
     });
 
     const existingUserIds = new Set(existingMappings.map((m) => m.userId));
-    const newMappings = userMappings.filter(
-      (m) => !existingUserIds.has(m.userId),
-    );
+    const newMappings = userMappings.filter((m) => !existingUserIds.has(m.userId));
 
     if (newMappings.length > 0) {
       await this.userRepo.userStoreMappingModel.bulkCreate(newMappings, {
@@ -233,21 +220,16 @@ export class ManualOrderHelperService {
       transaction: t,
     });
 
-    const existingCustomerSet = new Set(
-      existingCustomers.map((e) => `${e.package_id}-${e.customer_id}`),
-    );
+    const existingCustomerSet = new Set(existingCustomers.map((e) => `${e.package_id}-${e.customer_id}`));
     const newPackageCustomerEntries = packageCustomerEntries.filter(
       (e) => !existingCustomerSet.has(`${e.package_id}-${e.customer_id}`),
     );
 
     if (newPackageCustomerEntries.length > 0) {
-      await this.pkgRepo.packageCustomerModel.bulkCreate(
-        newPackageCustomerEntries,
-        {
-          transaction: t,
-          ignoreDuplicates: true,
-        },
-      );
+      await this.pkgRepo.packageCustomerModel.bulkCreate(newPackageCustomerEntries, {
+        transaction: t,
+        ignoreDuplicates: true,
+      });
     }
 
     /**
@@ -272,13 +254,10 @@ export class ManualOrderHelperService {
         selected: true,
       }));
 
-    const packageBrands = await this.pkgRepo.packageBrandModel.bulkCreate(
-      brandPayload,
-      {
-        transaction: t,
-        returning: true,
-      },
-    );
+    const packageBrands = await this.pkgRepo.packageBrandModel.bulkCreate(brandPayload, {
+      transaction: t,
+      returning: true,
+    });
 
     const brandIdToPkgBrandId = new Map();
     packageBrands.forEach((b) => brandIdToPkgBrandId.set(b.brand_id, b.id));
@@ -358,12 +337,9 @@ export class ManualOrderHelperService {
       .filter((x) => !!x.item_id);
 
     if (finalVariantInsert.length > 0) {
-      await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(
-        finalVariantInsert,
-        {
-          transaction: t,
-        },
-      );
+      await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(finalVariantInsert, {
+        transaction: t,
+      });
     }
 
     // Insert size/qty
@@ -397,9 +373,7 @@ export class ManualOrderHelperService {
           to: email,
           isNew,
           userEmail: email,
-          password: isNew
-            ? (user as any).plainPassword
-            : 'Your existing password',
+          password: isNew ? (user as any).plainPassword : 'Your existing password',
           // orderNo: packageOrder.order_id,
           storeName: store.store_name,
           storeLogo: store.store_icon,
@@ -442,33 +416,24 @@ export class ManualOrderHelperService {
                         `
               : ``;
 
-            const { html, subject } = this.mailService.getPopulatedTemplate(
-              TemplatesSlug.ManualOrderNewUser,
-              {
-                frontendURL: data.frontendURL,
-                // orderNo: data.orderNo,
-                storeName: data.storeName,
-                userEmail: data.userEmail,
-                password: data.password,
-                supportEmail: data.supportEmail,
-                project: data.project,
-                oneSyncLogo: process.env.ONE_SYNC_LOGO,
-                storeLogo: data.storeLogo,
-              },
-            );
+            const { html, subject } = this.mailService.getPopulatedTemplate(TemplatesSlug.ManualOrderNewUser, {
+              frontendURL: data.frontendURL,
+              // orderNo: data.orderNo,
+              storeName: data.storeName,
+              userEmail: data.userEmail,
+              password: data.password,
+              supportEmail: data.supportEmail,
+              project: data.project,
+              oneSyncLogo: process.env.ONE_SYNC_LOGO,
+              storeLogo: data.storeLogo,
+            });
 
-            const finalHtml = html.replace(
-              /<!-- CREDENTIALS_PLACEHOLDER -->/g,
-              credentialsSection,
-            );
+            const finalHtml = html.replace(/<!-- CREDENTIALS_PLACEHOLDER -->/g, credentialsSection);
 
             return this.mailService.sendMail(data.to, finalHtml, subject);
           } catch (err) {
             if (data) {
-              console.error(
-                `❌ Email send failed for ${data.to}:`,
-                err.message,
-              );
+              console.error(`❌ Email send failed for ${data.to}:`, err.message);
               return { success: false, to: data.to, error: err.message } as any;
             }
             return {

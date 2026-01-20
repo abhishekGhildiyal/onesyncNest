@@ -12,6 +12,7 @@ import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from 'src/common/guards/auth.guard';
 import type { getUser } from 'src/common/interfaces/common/getUser';
+import * as DTO from './dto/product.dto';
 import { ProductsService } from './products.service';
 
 @ApiTags('ProductBrands')
@@ -31,25 +32,30 @@ export class ProductsController {
   }
 
   @Post('brandProducts')
-  brandProducts(@GetUser() user: any = { storeId: 1 }, @Body() body: any) {
+  brandProducts(@GetUser() user: getUser, @Body() body: any) {
     return this.productsService.brandProducts(user, body);
   }
 
-  @Post('createPackage')
-  createPackage(
-    @GetUser() user: any = { storeId: 1, userId: 1 },
-    @Body() body: any,
+  @Post('brandProductsAccessList')
+  brandProductsAccessList(
+    @GetUser() user: getUser,
+    @Body() body: DTO.BrandProductsDto,
   ) {
+    return this.productsService.brandProductsAcessList(user, body);
+  }
+
+  @Post('createPackage')
+  createPackage(@GetUser() user: getUser, @Body() body: any) {
     return this.productsService.createPackage(user, body);
   }
 
   @Get('customers')
-  allCustomers(@GetUser() user: any = { storeId: 1 }, @Query() query: any) {
+  allCustomers(@GetUser() user: getUser, @Query() query: DTO.AllCustomersDto) {
     return this.productsService.AllCustomers(user, query);
   }
 
   @Post('linkCustomer')
-  linkCustomer(@GetUser() user: any = { storeId: 1 }, @Body() body: any) {
+  linkCustomer(@GetUser() user: getUser, @Body() body: any) {
     return this.productsService.linkCustomer(user, body);
   }
 

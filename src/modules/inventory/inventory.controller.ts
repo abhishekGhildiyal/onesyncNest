@@ -1,35 +1,44 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
+import { AuthGuard } from 'src/common/guards/auth.guard';
 import type { getUser } from 'src/common/interfaces/common/getUser';
+import * as DTO from './dto/inventory.dto';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('Inventory')
 @Controller('inventory')
+@UseGuards(AuthGuard)
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
-  @Post('all')
-  getAllInventory(@GetUser() user: getUser, @Body() body: any) {
+  @Post('getAll')
+  getAllInventory(
+    @GetUser() user: getUser,
+    @Body() body: DTO.GetAllInventoryDto,
+  ) {
     return this.inventoryService.getAllInventory(user, body);
   }
 
-  @Post('consumer-products')
-  consumerProducts(@GetUser() user: getUser, @Body() body: any) {
+  @Post('products')
+  consumerProducts(
+    @GetUser() user: getUser,
+    @Body() body: DTO.ConsumerProductsDto,
+  ) {
     return this.inventoryService.consumerProducts(user, body);
   }
 
-  @Post('variants')
-  productVariants(@Body() body: any) {
+  @Post('detail')
+  productVariants(@Body() body: DTO.ProductVariantsDto) {
     return this.inventoryService.productVariants(body);
   }
 
-  @Get('brands')
+  @Get('inventoryBrands')
   inventoryBrands(@GetUser() user: getUser) {
     return this.inventoryService.inventoryBrands(user);
   }
 
-  @Post('hyper-add')
+  @Post('hyperAdd')
   hyperAddinventory(@Body() body: any) {
     return this.inventoryService.hyperAddinventory(body);
   }

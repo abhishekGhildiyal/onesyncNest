@@ -1,32 +1,80 @@
+// shopify.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { DataType } from '@shopify/shopify-api';
 import { shopify } from './shopify.config';
 
+interface StoreConfig {
+  shopify_store: string;
+  shopify_token: string;
+  id?: string | number;
+  store_domain?: string;
+  is_discount?: boolean;
+}
+
+interface DeleteResult {
+  id: string;
+  success: boolean;
+  message?: string;
+  error?: string;
+  status?: number;
+}
+
 @Injectable()
+export class ShopifyServiceFactory {
+  private readonly logger = new Logger(ShopifyServiceFactory.name);
+  private serviceCache = new Map<string, ShopifyService>();
+
+  createService(store: StoreConfig): ShopifyService {
+    const cacheKey = `${store.shopify_store}:${store.shopify_token}`;
+
+    if (this.serviceCache.has(cacheKey)) {
+      return this.serviceCache.get(cacheKey)!;
+    }
+
+    const service = new ShopifyService(store);
+    this.serviceCache.set(cacheKey, service);
+    return service;
+  }
+}
+
 export class ShopifyService {
   private readonly logger = new Logger(ShopifyService.name);
+  private storeConfig: StoreConfig;
+  private client: any;
+  private session: any;
 
-  private getClient(store: any) {
+  constructor(store: StoreConfig) {
     if (!store?.shopify_store || !store?.shopify_token) {
       throw new Error('Invalid store object: missing shopifyStore or shopifyToken');
     }
 
-    let storeName = store.shopify_store.trim();
+    this.storeConfig = store;
+    this.initializeClient();
+  }
+
+  private initializeClient(): void {
+    // Clean the store name
+    let storeName = this.storeConfig.shopify_store.trim();
     if (!storeName.endsWith('.myshopify.com')) {
       storeName = `${storeName}.myshopify.com`;
     }
 
-    const session = shopify.session.customAppSession(storeName);
-    session.accessToken = store.shopify_token;
+    // Create session for the store
+    this.session = shopify.session.customAppSession(storeName);
+    this.session.accessToken = this.storeConfig.shopify_token;
 
-    return new shopify.clients.Rest({ session });
+    // REST client using the new API structure
+    this.client = new shopify.clients.Rest({ session: this.session });
+  }
+
+  getStoreConfig(): StoreConfig {
+    return this.storeConfig;
   }
 
   /** Find product by handle */
-  async findProductByHandle(store: any, handle: string) {
+  async findProductByHandle(handle: string): Promise<any> {
     try {
-      const client = this.getClient(store);
-      const response: any = await client.get({
+      const response: any = await this.client.get({
         path: 'products',
         query: { handle, limit: 1 },
       });
@@ -38,11 +86,10 @@ export class ShopifyService {
   }
 
   /** Create product */
-  async createProduct(store: any, payload: any) {
+  async createProduct(payload: any): Promise<any> {
     if (!payload?.product?.variants?.length) return null;
     try {
-      const client = this.getClient(store);
-      const response: any = await client.post({
+      const response: any = await this.client.post({
         path: 'products',
         data: payload,
         type: DataType.JSON,
@@ -55,11 +102,10 @@ export class ShopifyService {
   }
 
   /** Update product */
-  async updateProduct(store: any, payload: any) {
+  async updateProduct(payload: any): Promise<any> {
     if (!payload?.product?.id) throw new Error('Missing Shopify product ID for update');
     try {
-      const client = this.getClient(store);
-      const response: any = await client.put({
+      const response: any = await this.client.put({
         path: `products/${payload.product.id}`,
         data: payload,
         type: DataType.JSON,
@@ -72,10 +118,10 @@ export class ShopifyService {
   }
 
   /** Sync product: create or update */
-  async syncProduct(store: any, payload: any) {
+  async syncProduct(payload: any): Promise<any> {
     // If product doesn't have Shopify ID, check by handle
     if (!payload.product.id && payload.product.handle) {
-      const shopifyProduct = await this.findProductByHandle(store, payload.product.handle);
+      const shopifyProduct = await this.findProductByHandle(payload.product.handle);
       if (shopifyProduct) {
         payload.product.id = shopifyProduct.id;
 
@@ -88,12 +134,12 @@ export class ShopifyService {
     }
 
     // Update if exists, else create
-    if (payload.product.id) return this.updateProduct(store, payload);
-    return this.createProduct(store, payload);
+    if (payload.product.id) return this.updateProduct(payload);
+    return this.createProduct(payload);
   }
 
   /** Delete multiple products by Shopify IDs */
-  async deleteItems(store: any, shopifyIds: string[] = [], productId?: number) {
+  async deleteItems(shopifyIds: string[] = [], productId?: number): Promise<DeleteResult[]> {
     if (!Array.isArray(shopifyIds) || shopifyIds.length === 0) {
       this.logger.warn('⚠️ No Shopify product IDs provided for deletion.');
       return [];
@@ -101,18 +147,16 @@ export class ShopifyService {
 
     this.logger.log(`🧹 Starting Shopify deletion for product ${productId} (${shopifyIds.length} item(s))...`);
 
-    const client = this.getClient(store);
-
     const results = await Promise.all(
       shopifyIds.map(async (id) => {
         try {
-          const product: any = await client.get({ path: `products/${id}` }).catch(() => null);
+          const product: any = await this.client.get({ path: `products/${id}` }).catch(() => null);
           if (!product || !product.body?.product) {
             this.logger.warn(`⚠️ Product not found on Shopify for ID: ${id}`);
             return { id, success: false, message: 'Not found' };
           }
 
-          const response: any = await client.delete({ path: `products/${id}` });
+          const response: any = await this.client.delete({ path: `products/${id}` });
           this.logger.log(`✅ Deleted Shopify product ID: ${id}`);
           return { id, success: true, status: response?.status };
         } catch (err) {

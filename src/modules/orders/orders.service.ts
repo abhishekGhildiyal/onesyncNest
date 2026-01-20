@@ -2,11 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Op } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import type { getUser } from 'src/common/interfaces/common/getUser';
-import {
-  ORDER_ITEMS,
-  PACKAGE_STATUS,
-  PAYMENT_STATUS,
-} from '../../common/constants/enum';
+import { ORDER_ITEMS, PACKAGE_STATUS, PAYMENT_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
 import { generateOrderId } from '../../common/helpers/order-generator.helper';
 import { sortSizes } from '../../common/helpers/sort-sizes.helper';
@@ -18,8 +14,10 @@ import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
 import { UserRepository } from 'src/db/repository/user.repository';
+import { TemplatesSlug } from '../mail/mail.constants';
 import { ShopifyService } from '../shopify/shopify.service';
 import { SocketGateway } from '../socket/socket.gateway';
+import * as DTO from './dto/orders.dto';
 
 @Injectable()
 export class OrdersService {
@@ -55,16 +53,8 @@ export class OrdersService {
         if (!linked) throw new BadRequestException(AllMessages.PAKG_NF);
       }
 
-      const OrderModelRef = (
-        isAccess
-          ? this.pkgRepo.accessPackageOrderModel
-          : this.pkgRepo.packageOrderModel
-      ) as any;
-      const BrandModelRef = (
-        isAccess
-          ? this.pkgRepo.accessPackageBrandModel
-          : this.pkgRepo.packageBrandModel
-      ) as any;
+      const OrderModelRef = (isAccess ? this.pkgRepo.accessPackageOrderModel : this.pkgRepo.packageOrderModel) as any;
+      const BrandModelRef = (isAccess ? this.pkgRepo.accessPackageBrandModel : this.pkgRepo.packageBrandModel) as any;
 
       const packageOrder = await OrderModelRef.findByPk(orderId);
       if (!packageOrder) throw new BadRequestException(AllMessages.PAKG_NF);
@@ -84,10 +74,7 @@ export class OrdersService {
       }
 
       if (roleName === 'Consumer') {
-        if (
-          packageOrder.isManualOrder &&
-          packageOrder.status === PACKAGE_STATUS.IN_PROGRESS
-        ) {
+        if (packageOrder.isManualOrder && packageOrder.status === PACKAGE_STATUS.IN_PROGRESS) {
           throw new BadRequestException(AllMessages.PAKG_NF);
         }
       } else if (packageOrder.status === PACKAGE_STATUS.DRAFT) {
@@ -96,15 +83,9 @@ export class OrdersService {
 
       let brandWhere: any = { package_id: packageOrder.id };
       if (!isAccess) {
-        if (
-          packageOrder.status === PACKAGE_STATUS.CONFIRM &&
-          packageOrder.isManualOrder
-        ) {
+        if (packageOrder.status === PACKAGE_STATUS.CONFIRM && packageOrder.isManualOrder) {
           // fetch all brands
-        } else if (
-          packageOrder.status !== PACKAGE_STATUS.SUBMITTED &&
-          packageOrder.status !== PACKAGE_STATUS.DRAFT
-        ) {
+        } else if (packageOrder.status !== PACKAGE_STATUS.SUBMITTED && packageOrder.status !== PACKAGE_STATUS.DRAFT) {
           brandWhere.selected = true;
         }
       }
@@ -140,9 +121,7 @@ export class OrdersService {
           brandName: brand.brandData?.brandName || 'Unknown',
           brandMainId: brand.brandData?.id,
         }))
-        .sort((a, b) =>
-          a.brandName.localeCompare(b.brandName, 'en', { sensitivity: 'base' }),
-        );
+        .sort((a, b) => a.brandName.localeCompare(b.brandName, 'en', { sensitivity: 'base' }));
 
       return {
         success: true,
@@ -172,11 +151,10 @@ export class OrdersService {
     try {
       const { userId } = user;
       const { status, page = 1, limit = 10 } = body;
-      const consumerStore =
-        await this.pkgRepo.accessPackageCustomerModel.findAll({
-          where: { customer_id: userId },
-          attributes: ['package_id'],
-        });
+      const consumerStore = await this.pkgRepo.accessPackageCustomerModel.findAll({
+        where: { customer_id: userId },
+        attributes: ['package_id'],
+      });
       const packageIds = consumerStore.map((item) => item.package_id);
       if (packageIds.length === 0)
         return {
@@ -188,20 +166,19 @@ export class OrdersService {
         id: { [Op.in]: packageIds },
         status: status || PACKAGE_STATUS.ACCESS,
       };
-      const { rows: orders, count: total } =
-        await this.pkgRepo.accessPackageOrderModel.findAndCountAll({
-          where: whereCond,
-          limit: Number(limit),
-          offset: (Number(page) - 1) * Number(limit),
-          order: [['createdAt', 'DESC']],
-          include: [
-            {
-              model: this.storeRepo.storeModel,
-              as: 'store',
-              attributes: ['store_name', 'store_id'],
-            },
-          ],
-        });
+      const { rows: orders, count: total } = await this.pkgRepo.accessPackageOrderModel.findAndCountAll({
+        where: whereCond,
+        limit: Number(limit),
+        offset: (Number(page) - 1) * Number(limit),
+        order: [['createdAt', 'DESC']],
+        include: [
+          {
+            model: this.storeRepo.storeModel,
+            as: 'store',
+            attributes: ['store_name', 'store_id'],
+          },
+        ],
+      });
       return {
         success: true,
         data: orders,
@@ -230,21 +207,14 @@ export class OrdersService {
       const whereCond: any = {
         id: packageIds,
         [Op.not]: {
-          [Op.and]: [
-            { status: PACKAGE_STATUS.IN_PROGRESS },
-            { isManualOrder: true },
-          ],
+          [Op.and]: [{ status: PACKAGE_STATUS.IN_PROGRESS }, { isManualOrder: true }],
         },
       };
       if (status) {
         switch (status) {
           case PACKAGE_STATUS.CREATED:
             whereCond.status = {
-              [Op.in]: [
-                PACKAGE_STATUS.CREATED,
-                PACKAGE_STATUS.SUBMITTED,
-                PACKAGE_STATUS.INITIATED,
-              ],
+              [Op.in]: [PACKAGE_STATUS.CREATED, PACKAGE_STATUS.SUBMITTED, PACKAGE_STATUS.INITIATED],
             };
             break;
           case PACKAGE_STATUS.CONFIRM:
@@ -260,20 +230,19 @@ export class OrdersService {
             whereCond.status = status;
         }
       }
-      const { rows: orders, count: total } =
-        await this.pkgRepo.packageOrderModel.findAndCountAll({
-          where: whereCond,
-          limit: Number(limit),
-          offset: (Number(page) - 1) * Number(limit),
-          order: [['updatedAt', 'DESC']],
-          include: [
-            {
-              model: this.storeRepo.storeModel,
-              as: 'store',
-              attributes: ['store_name', 'store_id'],
-            },
-          ],
-        });
+      const { rows: orders, count: total } = await this.pkgRepo.packageOrderModel.findAndCountAll({
+        where: whereCond,
+        limit: Number(limit),
+        offset: (Number(page) - 1) * Number(limit),
+        order: [['updatedAt', 'DESC']],
+        include: [
+          {
+            model: this.storeRepo.storeModel,
+            as: 'store',
+            attributes: ['store_name', 'store_id'],
+          },
+        ],
+      });
       return {
         success: true,
         data: orders,
@@ -315,31 +284,24 @@ export class OrdersService {
        |----------------------------------------
        */
       if (status === PACKAGE_STATUS.ACCESS) {
-        const { rows, count } =
-          await this.pkgRepo.accessPackageOrderModel.findAndCountAll({
-            where: {
-              store_id: storeId,
-              status: { [Op.ne]: PACKAGE_STATUS.DRAFT },
+        const { rows, count } = await this.pkgRepo.accessPackageOrderModel.findAndCountAll({
+          where: {
+            store_id: storeId,
+            status: { [Op.ne]: PACKAGE_STATUS.DRAFT },
+          },
+          distinct: true,
+          limit: Nlimit,
+          offset,
+          order: [['createdAt', 'DESC']],
+          attributes: ['packageName', 'id', 'createdAt', 'showPrices', 'isManualOrder'],
+          include: [
+            {
+              model: this.pkgRepo.accessPackageCustomerModel,
+              as: 'customers',
+              attributes: ['customer_id'],
             },
-            distinct: true,
-            limit: Nlimit,
-            offset,
-            order: [['createdAt', 'DESC']],
-            attributes: [
-              'packageName',
-              'id',
-              'createdAt',
-              'showPrices',
-              'isManualOrder',
-            ],
-            include: [
-              {
-                model: this.pkgRepo.accessPackageCustomerModel,
-                as: 'customers',
-                attributes: ['customer_id'],
-              },
-            ],
-          });
+          ],
+        });
 
         const data = rows.map((order) => {
           const json: any = order.toJSON();
@@ -382,11 +344,7 @@ export class OrdersService {
         switch (status) {
           case PACKAGE_STATUS.CREATED:
             whereCond.status = {
-              [Op.in]: [
-                PACKAGE_STATUS.CREATED,
-                PACKAGE_STATUS.SUBMITTED,
-                PACKAGE_STATUS.INITIATED,
-              ],
+              [Op.in]: [PACKAGE_STATUS.CREATED, PACKAGE_STATUS.SUBMITTED, PACKAGE_STATUS.INITIATED],
             };
             break;
 
@@ -395,16 +353,11 @@ export class OrdersService {
             break;
 
           case PACKAGE_STATUS.CONFIRM:
-            whereCond[Op.or] = [
-              { status: PACKAGE_STATUS.CONFIRM, isManualOrder: false },
-            ];
+            whereCond[Op.or] = [{ status: PACKAGE_STATUS.CONFIRM, isManualOrder: false }];
             break;
 
           case PACKAGE_STATUS.COMPLETED:
-            whereCond[Op.or] = [
-              { status: PACKAGE_STATUS.COMPLETED },
-              { status: PACKAGE_STATUS.CLOSE },
-            ];
+            whereCond[Op.or] = [{ status: PACKAGE_STATUS.COMPLETED }, { status: PACKAGE_STATUS.CLOSE }];
             break;
 
           default:
@@ -451,37 +404,36 @@ export class OrdersService {
       const whereCustCond: any = {};
       if (customerId) whereCustCond.customer_id = customerId;
 
-      const { rows, count } =
-        await this.pkgRepo.packageOrderModel.findAndCountAll({
-          where: whereCond,
-          limit: Nlimit,
-          offset,
-          order: [['createdAt', 'DESC']],
-          distinct: true,
-          raw: true,
-          nest: true,
-          include: [
-            {
-              model: this.pkgRepo.packageCustomerModel,
-              as: 'customers',
-              where: whereCustCond,
-              required: !!customerId,
-              include: [
-                {
-                  model: this.userRepo.userModel,
-                  as: 'customer',
-                  attributes: ['id', 'firstName', 'lastName'],
-                },
-              ],
-            },
-            {
-              model: this.pkgRepo.packagePaymentModel,
-              as: 'payment',
-              where: wherePayCond,
-              required,
-            },
-          ],
-        });
+      const { rows, count } = await this.pkgRepo.packageOrderModel.findAndCountAll({
+        where: whereCond,
+        limit: Nlimit,
+        offset,
+        order: [['createdAt', 'DESC']],
+        distinct: true,
+        raw: true,
+        nest: true,
+        include: [
+          {
+            model: this.pkgRepo.packageCustomerModel,
+            as: 'customers',
+            where: whereCustCond,
+            required: !!customerId,
+            include: [
+              {
+                model: this.userRepo.userModel,
+                as: 'customer',
+                attributes: ['id', 'firstName', 'lastName'],
+              },
+            ],
+          },
+          {
+            model: this.pkgRepo.packagePaymentModel,
+            as: 'payment',
+            where: wherePayCond,
+            required,
+          },
+        ],
+      });
 
       /**
        |----------------------------------------
@@ -506,11 +458,7 @@ export class OrdersService {
       }
 
       const data = Object.values(grouped).map((order: any) => {
-        const totalReceived =
-          order.payments?.reduce(
-            (sum, p) => sum + (p.received_amount || 0),
-            0,
-          ) || 0;
+        const totalReceived = order.payments?.reduce((sum, p) => sum + (p.received_amount || 0), 0) || 0;
 
         return {
           ...order,
@@ -540,9 +488,7 @@ export class OrdersService {
       const { orderId, brandId } = params;
       const isAccess = query.access === 'true';
 
-      const OrderModel: any = isAccess
-        ? this.pkgRepo.accessPackageOrderModel
-        : this.pkgRepo.packageOrderModel;
+      const OrderModel: any = isAccess ? this.pkgRepo.accessPackageOrderModel : this.pkgRepo.packageOrderModel;
       const BrandItemsModel: any = isAccess
         ? this.pkgRepo.accessPackageBrandItemsModel
         : this.pkgRepo.packageBrandItemsModel;
@@ -588,15 +534,7 @@ export class OrdersService {
                     model: this.productRepo.variantModel,
                     where: { status: 1, quantity: { [Op.gt]: 0 } },
                     as: 'variants',
-                    attributes: [
-                      'id',
-                      'option1Value',
-                      'quantity',
-                      'price',
-                      'accountType',
-                      'cost',
-                      'payout',
-                    ],
+                    attributes: ['id', 'option1Value', 'quantity', 'price', 'accountType', 'cost', 'payout'],
                   },
                 ]
               : []),
@@ -609,41 +547,20 @@ export class OrdersService {
           {
             model: this.pkgRepo.packageBrandItemsCapacityModel,
             as: 'capacities',
-            attributes: [
-              'id',
-              'variant_id',
-              'item_id',
-              'maxCapacity',
-              'selectedCapacity',
-            ],
+            attributes: ['id', 'variant_id', 'item_id', 'maxCapacity', 'selectedCapacity'],
             include: [
               {
                 model: this.productRepo.variantModel,
                 where: { status: 1, quantity: { [Op.gt]: 0 } },
                 as: 'variant',
-                attributes: [
-                  'id',
-                  'option1Value',
-                  'quantity',
-                  'price',
-                  'accountType',
-                  'cost',
-                  'payout',
-                ],
+                attributes: ['id', 'option1Value', 'quantity', 'price', 'accountType', 'cost', 'payout'],
               },
             ],
           },
           {
             model: this.pkgRepo.packageBrandItemsQtyModel,
             as: 'sizeQuantities',
-            attributes: [
-              'variant_size',
-              'item_id',
-              'maxCapacity',
-              'selectedCapacity',
-              'shortage',
-              'receivedQuantity',
-            ],
+            attributes: ['variant_size', 'item_id', 'maxCapacity', 'selectedCapacity', 'shortage', 'receivedQuantity'],
           },
         );
       }
@@ -660,8 +577,7 @@ export class OrdersService {
 
         const hasVariants = isAccess
           ? product.variants && product.variants.length > 0
-          : (item.capacities && item.capacities.length > 0) ||
-            (item.sizeQuantities && item.sizeQuantities.length > 0);
+          : (item.capacities && item.capacities.length > 0) || (item.sizeQuantities && item.sizeQuantities.length > 0);
         if (!hasVariants) continue;
 
         const brandName = product.brandData?.brandName || 'Unknown';
@@ -676,11 +592,7 @@ export class OrdersService {
             const size = (variant.option1Value || 'Unknown').trim();
             const stockQty = variant.quantity || 0;
             const price =
-              variant.accountType === '1'
-                ? variant.cost || 0
-                : variant.accountType === '0'
-                  ? variant.payout || 0
-                  : 0;
+              variant.accountType === '1' ? variant.cost || 0 : variant.accountType === '0' ? variant.payout || 0 : 0;
 
             variants.push({
               id: variant.id,
@@ -718,8 +630,7 @@ export class OrdersService {
               };
             sizeAndQuantity[size].demand += selected;
             sizeAndQuantity[size].shortage += qty.shortage || 0;
-            sizeAndQuantity[size].receivedQuantity +=
-              qty.receivedQuantity !== null ? qty.receivedQuantity : selected;
+            sizeAndQuantity[size].receivedQuantity += qty.receivedQuantity !== null ? qty.receivedQuantity : selected;
           }
           if (isInitiated && totalSelectedCapacity === 0) continue;
         } else {
@@ -760,11 +671,7 @@ export class OrdersService {
             costPrice: obj.quantity > 0 ? obj.totalCost / obj.quantity : 0,
           }))
           .filter((entry) =>
-            showDemand
-              ? entry.demand > 0
-              : !isInitiated
-                ? entry.quantity > 0
-                : entry.quantity > 0 && entry.demand > 0,
+            showDemand ? entry.demand > 0 : !isInitiated ? entry.quantity > 0 : entry.quantity > 0 && entry.demand > 0,
           );
 
         result.push({
@@ -784,11 +691,7 @@ export class OrdersService {
         });
       }
 
-      result.sort((a, b) =>
-        (a.itemName || '')
-          .toLowerCase()
-          .localeCompare((b.itemName || '').toLowerCase()),
-      );
+      result.sort((a, b) => (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()));
       return {
         success: true,
         message: AllMessages.FTCH_PRODUCTS,
@@ -800,18 +703,17 @@ export class OrdersService {
     }
   }
 
-  async manualProducts(params: any) {
+  /**
+   * @description Get manual order products whose selected quantity >= 0
+   */
+  async manualProducts(params: DTO.ParamOrderIdBrandIdDto) {
     try {
       const { orderId, brandId } = params;
 
-      const packageOrderData = await this.pkgRepo.packageOrderModel.findByPk(
-        orderId,
-        {
-          attributes: ['status'],
-        },
-      );
-      if (!packageOrderData)
-        throw new BadRequestException('Package order not found');
+      const packageOrderData = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
+        attributes: ['status'],
+      });
+      if (!packageOrderData) throw new BadRequestException('Package order not found');
 
       const includeArray = [
         {
@@ -829,13 +731,7 @@ export class OrdersService {
         {
           model: this.pkgRepo.packageBrandItemsCapacityModel,
           as: 'capacities',
-          attributes: [
-            'id',
-            'variant_id',
-            'item_id',
-            'maxCapacity',
-            'selectedCapacity',
-          ],
+          attributes: ['id', 'variant_id', 'item_id', 'maxCapacity', 'selectedCapacity'],
           include: [
             {
               model: this.productRepo.variantModel,
@@ -856,25 +752,17 @@ export class OrdersService {
         {
           model: this.pkgRepo.packageBrandItemsQtyModel,
           as: 'sizeQuantities',
-          attributes: [
-            'variant_size',
-            'item_id',
-            'maxCapacity',
-            'selectedCapacity',
-            'shortage',
-            'receivedQuantity',
-          ],
+          attributes: ['variant_size', 'item_id', 'maxCapacity', 'selectedCapacity', 'shortage', 'receivedQuantity'],
         },
       ];
 
-      const packageOrder: any =
-        await this.pkgRepo.packageBrandItemsModel.findAll({
-          where: { packageBrand_id: brandId },
-          include: includeArray,
-        });
+      // Fetch brand items with product, capacities, and qty
+      const packageOrder: any = await this.pkgRepo.packageBrandItemsModel.findAll({
+        where: { packageBrand_id: brandId },
+        include: includeArray,
+      });
 
-      if (!packageOrder || packageOrder.length === 0)
-        throw new BadRequestException(AllMessages.PAKG_NF);
+      if (!packageOrder || packageOrder.length === 0) throw new BadRequestException(AllMessages.PAKG_NF);
 
       const result: any[] = [];
 
@@ -883,9 +771,12 @@ export class OrdersService {
         if (!product) continue;
 
         const brandName = product?.brandData?.brandName || 'Unknown';
+
         const sizeAndQuantity: any = {};
+        const consumerDemand = {};
         const variants: any[] = [];
 
+        // Build variants and stock from capacities
         for (const cap of item.capacities || []) {
           const variant = (cap as any).variant;
           if (!variant) continue;
@@ -904,6 +795,7 @@ export class OrdersService {
             costPrice: variant.price || 0,
           });
 
+          // Initialize object if not exists
           if (!sizeAndQuantity[size]) {
             sizeAndQuantity[size] = {
               quantity: 0,
@@ -917,9 +809,13 @@ export class OrdersService {
           sizeAndQuantity[size].totalCost += stockQty * (variant.price || 0);
         }
 
+        // Build consumer demand from sizeQuantities
         for (const qty of item.sizeQuantities || []) {
           const size = (qty.variant_size || '').trim();
           if (!size) continue;
+
+          const selected = qty.selectedCapacity || 0;
+
           if (!sizeAndQuantity[size]) {
             sizeAndQuantity[size] = {
               quantity: 0,
@@ -929,38 +825,55 @@ export class OrdersService {
               totalCost: 0,
             };
           }
-          sizeAndQuantity[size].demand += qty.selectedCapacity || 0;
+          sizeAndQuantity[size].demand += selected;
           sizeAndQuantity[size].shortage += qty.shortage || 0;
-          sizeAndQuantity[size].receivedQuantity +=
-            qty.receivedQuantity !== null ? qty.receivedQuantity : 0;
+          sizeAndQuantity[size].receivedQuantity += qty.receivedQuantity ?? selected;
+
+          consumerDemand[size] = selected;
         }
 
+        const filteredVariants = variants.filter((v) => v.stock_quantity > 0);
+
         const sortedVariants = sortSizes(variants);
+
+        // Keep size if either stock > 0 OR consumerDemand > 0
         const sortedSizeAndQuantity = sortSizes(
-          Object.entries(sizeAndQuantity).map(([size, obj]: any) => ({
+          Object.entries(sizeAndQuantity).filter(([, obj]) => {
+            const o = obj as any;
+            return o.quantity > 0 || o.demand > 0;
+          }),
+        ).map(([size, obj]) => {
+          const avgCost = obj.quantity > 0 ? obj.totalCost / obj.quantity : 0;
+          return {
             size,
             quantity: obj.quantity,
             demand: obj.demand,
             shortage: obj.shortage,
             receivedQuantity: obj.receivedQuantity,
-            costPrice: obj.quantity > 0 ? obj.totalCost / obj.quantity : 0,
-          })),
-        ); // Filter? Legacy didn't filter here but verify logic
+            costPrice: avgCost,
+          };
+        });
 
-        if (sortedVariants.length > 0) {
-          result.push({
-            product_id: item.id,
-            name: product.itemName,
-            itemName: product.itemName,
-            image: product.image,
-            skuNumber: product.skuNumber,
-            brand_id: item.packageBrand_id,
-            brandData: { brandName },
-            variants: sortedVariants,
-            sizeAndQuantity: sortedSizeAndQuantity,
-          });
-        }
+        // if (sortedVariants.length === 0 && sortedSizeAndQuantity.length === 0) continue; // skip product with all zero qty
+
+        result.push({
+          name: product?.itemName || 'Unnamed',
+          productMainId: product?.product_id,
+          product_id: item.id,
+          itemName: product?.itemName,
+          image: product?.image || null,
+          skuNumber: product?.skuNumber,
+          brand_id: item.packageBrand_id || item.id,
+          brandData: { brandName },
+          variants: sortedVariants,
+          sizeAndQuantity: sortedSizeAndQuantity,
+          price: item.price,
+          isItemReceived: item?.isItemReceived || null,
+          consumerDemand,
+        });
       }
+
+      result.sort((a, b) => (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()));
 
       return {
         success: true,
@@ -974,9 +887,7 @@ export class OrdersService {
   }
 
   async updateVarientQuantity(body: any) {
-    const t = await (
-      this.pkgRepo.packageOrderModel.sequelize as any
-    ).transaction();
+    const t = await this.sequelize.transaction();
     try {
       const { brandId, items = [], packageOrderId, isSearch } = body;
 
@@ -1024,7 +935,7 @@ export class OrdersService {
       await t.commit();
       return { success: true, message: AllMessages.QUANT_UPDATED };
     } catch (err) {
-      if (t && !t.finished) await t.rollback();
+      if (t) await t.rollback();
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
@@ -1034,10 +945,7 @@ export class OrdersService {
       const { items } = body;
       for (const item of items || []) {
         const { itemId, totalQuantity, variants } = item;
-        await this.pkgRepo.packageBrandItemsModel.update(
-          { consumerDemand: totalQuantity },
-          { where: { id: itemId } },
-        );
+        await this.pkgRepo.packageBrandItemsModel.update({ consumerDemand: totalQuantity }, { where: { id: itemId } });
         for (const variant of variants || []) {
           const { size, quantity } = variant;
           if (size == null) continue;
@@ -1061,21 +969,13 @@ export class OrdersService {
     }
   }
 
-  async setItemPrice(user: any, body: any) {
-    const t = await (
-      this.pkgRepo.packageOrderModel.sequelize as any
-    ).transaction();
+  async setItemPrice(user: getUser, body: DTO.SetItemPriceDto) {
+    const t = await this.sequelize.transaction();
     try {
-      const {
-        packageOrderId,
-        packageBrandId,
-        prices = [],
-        items = [],
-        isSearch,
-      } = body;
+      const { packageOrderId, packageBrandId, prices = [], items = [], isSearch } = body;
       const { userId } = user;
 
-      const existingOrder = await this.pkgRepo.packageOrderModel.findOne({
+      const existingOrder: any = await this.pkgRepo.packageOrderModel.findOne({
         where: {
           id: packageOrderId,
           status: {
@@ -1088,16 +988,15 @@ export class OrdersService {
             ],
           },
         },
-        include: [
-          { model: this.pkgRepo.packageCustomerModel, as: 'customers' },
-        ],
+        include: [{ model: this.pkgRepo.packageCustomerModel, as: 'customers' }],
         transaction: t,
       });
 
       if (!existingOrder) {
-        if (t && !t.finished) await t.rollback();
+        if (t) await t.rollback();
         throw new BadRequestException(AllMessages.INITD_REQ);
       }
+      const customer_id = existingOrder.customers.map((c) => c.customer_id);
 
       if (existingOrder.sales_agent_id == null) {
         await this.pkgRepo.packageOrderModel.update(
@@ -1105,12 +1004,11 @@ export class OrdersService {
           { where: { id: packageOrderId }, transaction: t },
         );
       } else if (existingOrder.sales_agent_id !== userId) {
-        if (t && !t.finished) await t.rollback();
-        throw new BadRequestException(
-          'You are not authorized to update this package.',
-        );
+        if (t) await t.rollback();
+        throw new BadRequestException('You are not authorized to update this package.');
       }
 
+      // Update prices
       if (prices.length) {
         await Promise.all(
           prices.map(({ price, packageBrandItemId }) =>
@@ -1128,6 +1026,7 @@ export class OrdersService {
         );
       }
 
+      // Prepare item and variant updates
       let itemTotalQuantity = 0;
       const itemUpdates: Promise<any>[] = [];
       const variantUpdates: Promise<any>[] = [];
@@ -1174,36 +1073,36 @@ export class OrdersService {
       await Promise.all([...itemUpdates, ...variantUpdates]);
       await t.commit();
 
+      // Socket to send item updates -----------------------
+      if (customer_id) {
+        this.socketGateway.server.emit(`itemUpdated-${customer_id[0]}`, {
+          packageOrderId,
+        });
+      }
+      this.socketGateway.server.emit(`updateQty-${existingOrder?.store_id}-${packageOrderId}`);
+
       return { success: true, message: AllMessages.ITM_PRC_UPDT };
     } catch (err) {
-      if (t && !t.finished) await t.rollback();
-      if (err instanceof BadRequestException) throw err;
+      if (t) await t.rollback();
+      console.error('❌ setItemPrice error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
   async saveOrderAsDraft(user: any, body: any) {
-    const t = await (
-      this.pkgRepo.packageOrderModel.sequelize as any
-    ).transaction();
+    const t = await (this.pkgRepo.packageOrderModel.sequelize as any).transaction();
     try {
       const { packageId, brands = [] } = body;
       const { userId } = user;
 
-      const accessOrder = await this.pkgRepo.accessPackageOrderModel.findByPk(
-        packageId,
-        {
-          transaction: t,
-        },
-      );
+      const accessOrder = await this.pkgRepo.accessPackageOrderModel.findByPk(packageId, {
+        transaction: t,
+      });
       if (!accessOrder) throw new BadRequestException(AllMessages.PAKG_NF);
 
-      const store = await this.storeRepo.storeModel.findByPk(
-        accessOrder.store_id,
-        {
-          transaction: t,
-        },
-      );
+      const store = await this.storeRepo.storeModel.findByPk(accessOrder.store_id, {
+        transaction: t,
+      });
       if (!store) throw new BadRequestException('Store not found.');
 
       const orderIdStr = await generateOrderId({
@@ -1226,10 +1125,9 @@ export class OrdersService {
         { transaction: t },
       );
 
-      await this.pkgRepo.packageCustomerModel.create(
-        { package_id: pkg.id, customer_id: userId } as any,
-        { transaction: t },
-      );
+      await this.pkgRepo.packageCustomerModel.create({ package_id: pkg.id, customer_id: userId } as any, {
+        transaction: t,
+      });
 
       const brandIds = brands.map((b: any) => b.brand_id).filter(Boolean);
       const validBrands = await this.productRepo.brandModel.findAll({
@@ -1243,13 +1141,11 @@ export class OrdersService {
         .map((b: any) => ({ package_id: pkg.id, brand_id: b.brand_id }));
 
       if (brandPayload.length > 0) {
-        const createdBrands = await this.pkgRepo.packageBrandModel.bulkCreate(
-          brandPayload,
-          { transaction: t, returning: true },
-        );
-        const brandIdToPkgBrandId = new Map(
-          createdBrands.map((b) => [b.brand_id, b.id]),
-        );
+        const createdBrands = await this.pkgRepo.packageBrandModel.bulkCreate(brandPayload, {
+          transaction: t,
+          returning: true,
+        });
+        const brandIdToPkgBrandId = new Map(createdBrands.map((b) => [b.brand_id, b.id]));
 
         const itemRecords: any[] = [];
         const variantRecords: any[] = [];
@@ -1289,15 +1185,14 @@ export class OrdersService {
           }
         }
 
-        const createdItems =
-          await this.pkgRepo.packageBrandItemsModel.bulkCreate(
-            itemRecords.map((r) => ({
-              packageBrand_id: r.packageBrand_id,
-              product_id: r.product_id,
-              quantity: r.quantity,
-            })),
-            { transaction: t, returning: true },
-          );
+        const createdItems = await this.pkgRepo.packageBrandItemsModel.bulkCreate(
+          itemRecords.map((r) => ({
+            packageBrand_id: r.packageBrand_id,
+            product_id: r.product_id,
+            quantity: r.quantity,
+          })),
+          { transaction: t, returning: true },
+        );
 
         const tempIdToItemId = new Map();
         createdItems.forEach((item, idx) => {
@@ -1313,12 +1208,9 @@ export class OrdersService {
           .filter((x) => !!x.item_id);
 
         if (finalVariantInsert.length > 0)
-          await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(
-            finalVariantInsert,
-            {
-              transaction: t,
-            },
-          );
+          await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(finalVariantInsert, {
+            transaction: t,
+          });
 
         const finalSizeInsert = sizeQtyArr
           .map((x) => ({
@@ -1329,12 +1221,9 @@ export class OrdersService {
           .filter((x) => !!x.item_id);
 
         if (finalSizeInsert.length > 0)
-          await this.pkgRepo.packageBrandItemsQtyModel.bulkCreate(
-            finalSizeInsert,
-            {
-              transaction: t,
-            },
-          );
+          await this.pkgRepo.packageBrandItemsQtyModel.bulkCreate(finalSizeInsert, {
+            transaction: t,
+          });
       }
 
       await t.commit();
@@ -1344,78 +1233,96 @@ export class OrdersService {
         data: { package_id: pkg.id, order_id: pkg.order_id },
       };
     } catch (err) {
-      if (t && !t.finished) await t.rollback();
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      if (t) await t.rollback();
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
   async createOrder(user: any, body: any) {
-    const t = await (
-      this.pkgRepo.packageOrderModel.sequelize as any
-    ).transaction();
+    const t = await (this.pkgRepo.packageOrderModel.sequelize as any).transaction();
     try {
-      const {
-        accessPackageId,
-        emails = [],
-        brands = [],
-        date,
-        customerDetail,
-      } = body;
+      const { accessPackageId, emails = [], brands = [], date, customerDetail } = body;
       const { userId } = user;
 
-      const packageOrder =
-        await this.createManualOrderService.createManualOrderHelper({
-          accessPackageId,
-          userId,
-          emails,
-          brands,
-          date,
-          customerDetail,
-          transaction: t,
-        });
+      const packageOrder = await this.createManualOrderService.createManualOrderHelper({
+        accessPackageId,
+        userId,
+        emails,
+        brands,
+        date,
+        customerDetail,
+        transaction: t,
+      });
 
       await t.commit();
       return packageOrder;
     } catch (err) {
-      if (t && !t.finished) await t.rollback();
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      if (t) await t.rollback();
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
-  async createManualOrder(user: any, body: any) {
-    return this.createOrder(user, body);
+  /**
+   * @description Manual order by admin
+   */
+  async createManualOrder(user: getUser, body: DTO.CreateManualOrderDto) {
+    const t = await this.sequelize.transaction();
+    try {
+      const { userId } = user;
+      const { packageId, emails = [], brandData = [], date = '', customerDetail } = body;
+
+      const manualOrder = await this.createManualOrderService.createManualOrderHelper({
+        accessPackageId: String(packageId),
+        userId,
+        emails,
+        brands: brandData,
+        date,
+        customerDetail,
+        transaction: t,
+      });
+
+      await t.commit();
+
+      return {
+        success: true,
+        message: AllMessages.MNUL_ODR,
+        data: {
+          package_id: manualOrder.id,
+          order_id: manualOrder.order_id,
+        },
+      };
+    } catch (err) {
+      console.error('❌ orderCount error:', err);
+      if (t) await t.rollback();
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+    }
   }
 
-  async initiateOrder(orderId: number, user: any) {
-    const t = await (
-      this.pkgRepo.packageOrderModel.sequelize as any
-    ).transaction();
+  /**
+   * @description Initiate order for admin
+   */
+  async initiateOrder(param: DTO.OrderIdParamDto, user: getUser) {
+    const t = await this.sequelize.transaction();
+    const { orderId } = param;
+
     try {
       const order = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
+        attributes: ['status', 'store_id', 'employee_id', 'sales_agent_id'],
         transaction: t,
         lock: t.LOCK.UPDATE,
       });
       if (!order) throw new BadRequestException(AllMessages.PAKG_NF);
 
-      if (
-        order.sales_agent_id != null &&
-        order.sales_agent_id !== user.userId
-      ) {
-        throw new BadRequestException(
-          'You are not authorized to initiate this package.',
-        );
+      if (order.sales_agent_id != null && order.sales_agent_id !== user.userId) {
+        throw new BadRequestException('You are not authorized to initiate this package.');
       }
-      if (order.status === PACKAGE_STATUS.INITIATED)
-        throw new BadRequestException('Package is already initiated.');
-      if (
-        order.status !== PACKAGE_STATUS.CREATED &&
-        order.status !== PACKAGE_STATUS.SUBMITTED
-      ) {
-        throw new BadRequestException(
-          "Package status must be 'CREATED' or 'SUBMITTED' to initiate.",
-        );
+      if (order.status === PACKAGE_STATUS.INITIATED) throw new BadRequestException('Package is already initiated.');
+
+      if (order.status !== PACKAGE_STATUS.CREATED) {
+        throw new BadRequestException("Package status must be 'CREATED' or 'SUBMITTED' to initiate.");
       }
 
+      // ✅ Update package status & Assign initiator as sales agent
       await this.pkgRepo.packageOrderModel.update(
         {
           status: PACKAGE_STATUS.INITIATED,
@@ -1425,82 +1332,98 @@ export class OrdersService {
       );
 
       await t.commit();
-      this.socketGateway.emit(`reviewToProcess-${orderId}`, {
-        consumerName: user.fullName || user.firstName,
-      });
+      this.socketGateway.server.emit(`initiated-${orderId}`);
       return { success: true, message: AllMessages.PKG_INITD_SUCCSS };
     } catch (err) {
-      if (t && !t.finished) await t.rollback();
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      if (t) await t.rollback();
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
-  async markReview(orderId: number, user: any) {
-    const t = await (
-      this.pkgRepo.packageOrderModel.sequelize as any
-    ).transaction();
+  /**
+   * @description Mark order for Review and save price step 3
+   */
+  async markReview(orderId: DTO.OrderIdParamDto, user: getUser) {
+    const t = await this.sequelize.transaction();
     try {
-      const existingOrder = await this.pkgRepo.packageOrderModel.findOne({
+      const existingOrder: any = await this.pkgRepo.packageOrderModel.findOne({
         where: { id: orderId, status: PACKAGE_STATUS.INITIATED },
         include: [
           { model: this.storeRepo.storeModel, as: 'store' },
           {
             model: this.pkgRepo.packageCustomerModel,
+            where: { package_id: orderId },
             as: 'customers',
-            include: [{ model: this.userRepo.userModel, as: 'customer' }],
+            attributes: ['customer_id'],
+            include: [
+              {
+                model: this.userRepo.userModel,
+                as: 'customer',
+                attributes: ['firstName', 'lastName', 'email'],
+              },
+            ],
           },
         ],
         transaction: t,
       });
 
-      if (!existingOrder)
-        throw new BadRequestException(
-          "Package status must be 'INITIATED' to send it for Review.",
-        );
-      if (
-        existingOrder.sales_agent_id != null &&
-        existingOrder.sales_agent_id !== user.userId
-      ) {
-        throw new BadRequestException(
-          'You are not authorized to mark this package for Review.',
-        );
+      if (!existingOrder) throw new BadRequestException("Package status must be 'INITIATED' to send it for Review.");
+      if (existingOrder.sales_agent_id != null && existingOrder.sales_agent_id !== user.userId) {
+        throw new BadRequestException('You are not authorized to mark this package for Review.');
       }
 
       existingOrder.status = PACKAGE_STATUS.IN_REVIEW;
       await existingOrder.save({ transaction: t });
 
-      await t.commit();
-
-      // Send email notification for review
-      setImmediate(async () => {
-        try {
-          const orderData = existingOrder as any;
-          const store = orderData.store;
-          const customers = orderData.customers || [];
-
-          for (const customer of customers) {
-            if (customer.customer?.email) {
-              await this.mailService.sendOrderReviewEmail({
-                to: customer.customer.email,
-                orderNumber: orderData.order_id,
-                storeName: store?.store_name,
-                customerName:
-                  `${customer.customer.firstName || ''} ${customer.customer.lastName || ''}`.trim(),
-              });
-            }
-          }
-        } catch (emailErr) {
-          console.error('❌ Background email error:', emailErr);
+      const recipientEmails = new Set();
+      existingOrder.customers?.forEach((cust) => {
+        if (cust.customer?.email) {
+          recipientEmails.add(cust.customer.email);
         }
       });
+      const customer = existingOrder.customers?.[0];
+      const customerId = customer?.customer_id;
 
-      this.socketGateway.emit(`inReview-${orderId}`, {
+      // Prepare email content
+      const { html, subject } = this.mailService.getPopulatedTemplate(TemplatesSlug.ReviewOrderConsumer, {
+        project: process.env.PROJECT_NAME,
+        orderNo: existingOrder.order_id,
+        storeName: existingOrder.store.store_name,
+        link: `${process.env.FRONTEND_URL}onesync.test/consumer-orders/open/${existingOrder.id}`,
+        supportEmail: process.env.SUPPORT_EMAIL,
+        frontendURL: process.env.FRONTEND_URL,
+        storeLogo: existingOrder?.store?.store_icon,
+        oneSyncLogo: process.env.ONE_SYNC_LOGO,
+      });
+
+      await t.commit();
+
+      //   sockets-------------
+      this.socketGateway.server.emit(`review-${customerId}`); // for listing
+      this.socketGateway.server.emit(`openToReview-${orderId}`, {
+        storeName: existingOrder?.store?.store_name,
+      }); // for popup.
+      this.socketGateway.server.emit(`statusChanged-${customerId}`); // for sidebar count
+      this.socketGateway.server.emit(`statusChanged-${existingOrder?.store_id}`);
+
+      // 📨 Send email in background
+      setImmediate(async () => {
+        Promise.all(
+          Array.from(recipientEmails).map((email) =>
+            this.mailService.sendMail(String(email), html, subject).catch((err) => {
+              console.error(`❌ Email send failed for ${email}:`, err);
+            }),
+          ),
+        );
+      });
+
+      this.socketGateway.server.emit(`inReview-${orderId}`, {
         message: 'Package marked for review',
       });
       return { success: true, message: AllMessages.PKG_REVW_SUCCSS };
     } catch (err) {
-      if (t && !t.finished) await t.rollback();
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      if (t) await t.rollback();
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
@@ -1575,28 +1498,25 @@ export class OrdersService {
 
       await transaction.commit();
 
-      this.socketGateway.emit(`reviewToProcess-${orderId}`, {
+      this.socketGateway.server.emit(`reviewToProcess-${orderId}`, {
         consumerName: user.fullName || user.firstName,
       });
-      this.socketGateway.emit(`statusChanged-${store_id}`, {});
-      this.socketGateway.emit(`statusChanged-${validUserId}`, {});
+      this.socketGateway.server.emit(`statusChanged-${store_id}`, {});
+      this.socketGateway.server.emit(`statusChanged-${validUserId}`, {});
 
       // Send confirmation emails in background
       setImmediate(async () => {
         try {
-          const packageOrder = await this.pkgRepo.packageOrderModel.findByPk(
-            orderId,
-            {
-              include: [
-                { model: this.storeRepo.storeModel, as: 'store' },
-                {
-                  model: this.pkgRepo.packageCustomerModel,
-                  as: 'customers',
-                  include: [{ model: this.userRepo.userModel, as: 'customer' }],
-                },
-              ],
-            },
-          );
+          const packageOrder = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
+            include: [
+              { model: this.storeRepo.storeModel, as: 'store' },
+              {
+                model: this.pkgRepo.packageCustomerModel,
+                as: 'customers',
+                include: [{ model: this.userRepo.userModel, as: 'customer' }],
+              },
+            ],
+          });
 
           if (packageOrder) {
             const anyOrder = packageOrder as any;
@@ -1608,8 +1528,7 @@ export class OrdersService {
                   to: customer.customer.email,
                   orderNumber: anyOrder.order_id,
                   storeName: anyOrder.store?.store_name,
-                  customerName:
-                    `${customer.customer.firstName || ''} ${customer.customer.lastName || ''}`.trim(),
+                  customerName: `${customer.customer.firstName || ''} ${customer.customer.lastName || ''}`.trim(),
                 });
               }
             }
@@ -1622,15 +1541,14 @@ export class OrdersService {
       return { success: true, message: AllMessages.PKG_ISIN_PRGS };
     } catch (err) {
       if (transaction) await transaction.rollback();
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
   async updateOrderBrands(body: any) {
     try {
       const { packageOrderId, brandIds = [] } = body;
-      const packageOrder =
-        await this.pkgRepo.packageOrderModel.findByPk(packageOrderId);
+      const packageOrder = await this.pkgRepo.packageOrderModel.findByPk(packageOrderId);
       if (!packageOrder) throw new BadRequestException(AllMessages.PAKG_NF);
 
       await this.pkgRepo.packageBrandModel.update(
@@ -1643,8 +1561,12 @@ export class OrdersService {
     }
   }
 
-  async getAllOrderItemsPrice(orderId: number) {
+  /**
+   * @description All items count and price in order
+   */
+  async getAllOrderItemsPrice(param: DTO.OrderIdParamDto) {
     try {
+      const { orderId } = param;
       const orderItems = await this.pkgRepo.packageBrandItemsModel.findAll({
         where: { id: orderId },
         attributes: [
@@ -1663,7 +1585,7 @@ export class OrdersService {
 
       return { success: true, data: orderItems };
     } catch (err) {
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
@@ -1721,10 +1643,7 @@ export class OrdersService {
         let qty = 0;
         const demand = brandItem?.consumerDemand;
         if (demand && typeof demand === 'object') {
-          qty = Object.values(demand as Record<string, any>).reduce(
-            (sum: number, v: any) => sum + (Number(v) || 0),
-            0,
-          );
+          qty = Object.values(demand as Record<string, any>).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0);
         } else {
           qty = Number(demand) || 0;
         }
@@ -1769,7 +1688,7 @@ export class OrdersService {
       };
     } catch (err) {
       await transaction.rollback();
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
@@ -1797,17 +1716,13 @@ export class OrdersService {
 
       const allItems = brands.flatMap((brand) => brand.items || []);
 
-      const totalConsumerDemand = allItems.reduce(
-        (sum, item) => sum + (Number(item.consumerDemand) || 0),
-        0,
-      );
+      const totalConsumerDemand = allItems.reduce((sum, item) => sum + (Number(item.consumerDemand) || 0), 0);
 
       const receivedQuantity = allItems.reduce((acc, item) => {
         if (item.isItemReceived === ORDER_ITEMS.ITM_RECEIVED) {
           // Use Enum
           const qtySum = (item.sizeQuantities || []).reduce(
-            (sum, sq) =>
-              sum + (sq.receivedQuantity > 0 ? sq.receivedQuantity : 0),
+            (sum, sq) => sum + (sq.receivedQuantity > 0 ? sq.receivedQuantity : 0),
             0,
           );
           return acc + qtySum;
@@ -1832,23 +1747,23 @@ export class OrdersService {
         prices,
       };
     } catch (err) {
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
+  /**
+   * @description Get order count
+   * @param user
+   * @returns
+   */
   async orderCount(user: getUser) {
     try {
       const { storeId, userId, isConsumer } = user;
 
-      const getCount = (
-        orders: any,
-        statuses: PACKAGE_STATUS[],
-        filterFn: any = null,
-      ) => {
-        const matches = orders.filter((o: any) => statuses.includes(o.status));
-        const filtered = filterFn ? matches.filter(filterFn) : matches;
-        return filtered.length;
-      };
+      const sum = (orders: any[], statuses: PACKAGE_STATUS[], manual: number | null = null) =>
+        orders
+          .filter((o) => statuses.includes(o.status) && (manual === null || Number(o.isManualOrder) === manual))
+          .reduce((acc, o) => acc + Number(o.count), 0);
 
       if (isConsumer) {
         const cOrders = await this.pkgRepo.packageCustomerModel.findAll({
@@ -1873,67 +1788,72 @@ export class OrdersService {
 
         const orders = await this.pkgRepo.packageOrderModel.findAll({
           where: { id: { [Op.in]: packageIds } },
-          attributes: ['status', 'isManualOrder'],
+          attributes: ['status', 'isManualOrder', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']],
+          group: ['status', 'isManualOrder'],
           raw: true,
         });
 
         const consumerCount = {
-          openOrders: getCount(orders, [
-            PACKAGE_STATUS.CREATED,
-            PACKAGE_STATUS.INITIATED,
-          ]),
-          review: getCount(orders, [PACKAGE_STATUS.IN_REVIEW]),
-          submitted: getCount(
-            orders,
-            [PACKAGE_STATUS.CONFIRM, PACKAGE_STATUS.IN_PROGRESS],
-            (o: any) => Number(o.isManualOrder) === 0,
-          ),
-          inBound: getCount(orders, [PACKAGE_STATUS.CLOSE]),
-          completed: getCount(orders, [PACKAGE_STATUS.COMPLETED]),
+          openOrders: sum(orders, [PACKAGE_STATUS.CREATED, PACKAGE_STATUS.INITIATED]),
+          review: sum(orders, [PACKAGE_STATUS.IN_REVIEW]),
+          submitted: sum(orders, [PACKAGE_STATUS.CONFIRM, PACKAGE_STATUS.IN_PROGRESS], 0),
+          inBound: sum(orders, [PACKAGE_STATUS.CLOSE]),
+          completed: sum(orders, [PACKAGE_STATUS.COMPLETED]),
         };
 
         return { success: true, data: consumerCount };
       }
 
+      // store flow
       const orders = await this.pkgRepo.packageOrderModel.findAll({
         where: { store_id: storeId },
-        attributes: ['status', 'isManualOrder'],
+        attributes: ['status', 'isManualOrder', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']],
+        group: ['status', 'isManualOrder'],
         raw: true,
       });
 
-      const requestCount = await this.productRepo.inventoryRequestModel.count({
-        where: { store_id: storeId, status: 'Requested' },
-      });
+      const [requestCount, withdrawalRequestCount, priceChangeRequestCount, incomingRequestCount] = await Promise.all([
+        this.productRepo.inventoryRequestModel.count({
+          where: { store_id: storeId, status: 'Requested' },
+        }),
+        this.productRepo.WithdrawnRequestModel.count({
+          where: { store_id: storeId, status: 'Requested' },
+        }),
+        this.productRepo.priceChangeRequestModel.count({
+          where: { store_id: storeId, status: 'Requested' },
+        }),
+        this.productRepo.variantModel.count({
+          where: { store_id: storeId, status: 4 },
+        }),
+      ]);
 
       const finalCount = {
-        openRequests: getCount(orders, [
-          PACKAGE_STATUS.CREATED,
-          PACKAGE_STATUS.INITIATED,
-        ]),
-        inReview: getCount(orders, [PACKAGE_STATUS.IN_REVIEW]),
-        readyToProcess: getCount(orders, [PACKAGE_STATUS.IN_PROGRESS]),
-        completed: getCount(orders, [
-          PACKAGE_STATUS.COMPLETED,
-          PACKAGE_STATUS.CLOSE,
-        ]),
-        confirm: getCount(
-          orders,
-          [PACKAGE_STATUS.CONFIRM],
-          (o) => Number(o.isManualOrder) === 0,
-        ),
+        openRequests: sum(orders, [(PACKAGE_STATUS.CREATED, PACKAGE_STATUS.INITIATED)]),
+        inReview: sum(orders, [PACKAGE_STATUS.IN_REVIEW]),
+        readyToProcess: sum(orders, [PACKAGE_STATUS.IN_PROGRESS]),
+        completed: sum(orders, [(PACKAGE_STATUS.COMPLETED, PACKAGE_STATUS.CLOSE)]),
+        confirm: sum(orders, [PACKAGE_STATUS.CONFIRM], 0),
         requestCount,
+        withdrawalRequestCount,
+        priceChangeRequestCount,
+        incomingRequestCount,
       };
 
       return { success: true, data: finalCount };
     } catch (err) {
       console.log('err in order count', err);
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
-  async agentList(user: any, type: string) {
+  /**
+   * @description get agent list by type
+   */
+  async agentList(user: getUser, params: DTO.AgentTypeParamDto) {
     try {
+      const { type } = params;
       let userIds: any[] = [];
+
       if (type === 'sales') {
         userIds = await this.userRepo.userStoreMappingModel.findAll({
           where: { storeId: user.storeId, is_sales_agent: true },
@@ -1970,17 +1890,15 @@ export class OrdersService {
         })),
       };
     } catch (err) {
+      console.error('❌ agentList error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
   /**
-   * @description Start order process
-   * @param user
-   * @param body
-   * @returns
+   * @description Start order by employee (Logistic Agent)
    */
-  async startOrderProcess(user: getUser, body: any) {
+  async startOrderProcess(user: getUser, body: DTO.StartOrderProcessDto) {
     try {
       const { orderId, agentId, agentName } = body;
 
@@ -1989,12 +1907,10 @@ export class OrdersService {
       });
 
       if (!order) {
-        throw new BadRequestException(
-          AllMessages.PAKG_NF || 'Order not found.',
-        );
+        throw new BadRequestException(AllMessages.PAKG_NF || 'Order not found.');
       }
 
-      order.employee_id = agentId || user.userId;
+      order.employee_id = Number(agentId || user.userId);
       await order.save();
 
       return {
@@ -2006,19 +1922,21 @@ export class OrdersService {
         },
       };
     } catch (err) {
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      console.error('❌ startOrderProcess error:', err);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
-  async assignSalesAgent(body: any) {
+  /**
+   * @description Assign sales agent to order
+   */
+  async assignSalesAgent(body: DTO.AssignSalesAgentDto) {
     try {
       const { orderId, agentId, agentName } = body;
 
       const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
       if (!order) {
-        throw new BadRequestException(
-          AllMessages.PAKG_NF || 'Order not found.',
-        );
+        throw new BadRequestException(AllMessages.PAKG_NF || 'Order not found.');
       }
 
       order.sales_agent_id = agentId;
@@ -2030,7 +1948,8 @@ export class OrdersService {
         data: order,
       };
     } catch (err) {
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      console.error('❌ assignSalesAgent error:', err);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
@@ -2052,6 +1971,9 @@ export class OrdersService {
     }
   }
 
+  /**
+   * @description Add Notes for orders
+   */
   async addNotes(body: any) {
     try {
       const { orderId, notes } = body;
@@ -2069,13 +1991,15 @@ export class OrdersService {
         message: AllMessages.NOTE_ADDED,
       };
     } catch (err) {
+      console.error('❌ addNotes error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
-  async getNotes(orderId: number) {
+  async getNotes(param: DTO.OrderIdParamDto) {
     try {
-      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
+      const { orderId } = param;
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId, { attributes: ['notes'] });
 
       if (!order) {
         throw new BadRequestException(AllMessages.PAKG_NF);
@@ -2083,7 +2007,7 @@ export class OrdersService {
 
       return {
         success: true,
-        message: 'Notes fetched successfully.', // AllMessages.FTCH_NOTES missing?
+        message: 'Notes fetched successfully.',
         data: order.notes,
       };
     } catch (err) {
@@ -2091,13 +2015,15 @@ export class OrdersService {
     }
   }
 
-  async storeConfirm(orderId: number, user: any, body: any, token: string) {
-    let transaction;
+  /**
+   * @description Confirm order from store side
+   */
+  async storeConfirm(param: DTO.OrderIdParamDto, user: getUser, body: any) {
+    const transaction = await this.sequelize.transaction();
     try {
-      const { storeId, userId, roleId } = user;
+      const { orderId } = param;
+      const { storeId, userId, roleId, token } = user;
       const { brandIds = [], confirmDate } = body;
-
-      transaction = await this.sequelize.transaction();
 
       const order = await this.pkgRepo.packageOrderModel.findOne({
         where: {
@@ -2105,13 +2031,19 @@ export class OrdersService {
           status: PACKAGE_STATUS.CONFIRM,
         },
         include: [
-          // Simplified include as relationships are trusted or verified elsewhere? Legacy included store/customer.
           { model: this.storeRepo.storeModel, as: 'store' },
           {
             model: this.pkgRepo.packageCustomerModel,
             where: { package_id: orderId },
             as: 'customers',
             attributes: ['customer_id'],
+            include: [
+              {
+                model: this.userRepo.userModel,
+                as: 'customer',
+                attributes: ['firstName', 'lastName', 'email'],
+              },
+            ],
           },
         ],
         transaction,
@@ -2149,7 +2081,7 @@ export class OrdersService {
       order.status = PACKAGE_STATUS.IN_PROGRESS;
       await order.save({ transaction });
 
-      // helper handles optional shopifyService internally if passed
+      // Mark inventory as sold
       await this.MarkInventorySold.markSoldInventory(
         orderId,
         confirmDate,
@@ -2163,15 +2095,21 @@ export class OrdersService {
 
       await transaction.commit();
 
-      // TODO: Sockets
+      // Sockets
+      this.socketGateway.server.emit(`submittedToInbound-${orderId}`, {
+        storeName: order?.store?.store_name,
+      });
+      // this.socketGateway.server.emit(`statusChanged-${customerId}`);
+      // this.socketGateway.server.emit(`statusChanged-${storeId}`);
 
       return {
         success: true,
         message: AllMessages.ORDR_CNFD,
       };
     } catch (err) {
+      console.error('❌ storeConfirm error:', err);
       if (transaction) await transaction.rollback();
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
@@ -2200,12 +2138,9 @@ export class OrdersService {
             status: 1,
             quantity: { [Op.gt]: 0 },
             [Op.and]: [
-              Sequelize.where(
-                Sequelize.fn('TRIM', Sequelize.col('option1Value')),
-                {
-                  [Op.in]: sizes,
-                },
-              ),
+              Sequelize.where(Sequelize.fn('TRIM', Sequelize.col('option1Value')), {
+                [Op.in]: sizes,
+              }),
             ],
           },
           attributes: ['option1Value', 'quantity'],
@@ -2240,8 +2175,7 @@ export class OrdersService {
         return {
           success: false,
           refresh: true,
-          message:
-            'Inventory quantities have changed, this page will now refresh with updates.',
+          message: 'Inventory quantities have changed, this page will now refresh with updates.',
         };
       }
 
@@ -2251,7 +2185,7 @@ export class OrdersService {
         message: 'All variants are in stock.',
       };
     } catch (err) {
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 } // End Class

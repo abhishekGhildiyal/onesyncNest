@@ -4,6 +4,7 @@ import type { getUser } from 'src/common/interfaces/common/getUser';
 import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { AllMessages } from '../../common/constants/messages';
+import * as DTO from './dto/inventory.dto';
 
 @Injectable()
 export class InventoryService {
@@ -12,7 +13,10 @@ export class InventoryService {
     private readonly productRepo: ProductRepository,
   ) {}
 
-  async getAllInventory(user: getUser, body: any) {
+  /**
+   * @description fetch consumer Products with variant total
+   */
+  async getAllInventory(user: getUser, body: DTO.GetAllInventoryDto) {
     const { userId } = user;
     const {
       page = 1,
@@ -25,8 +29,8 @@ export class InventoryService {
     } = body;
 
     try {
-      const Nlimit = parseInt(limit);
-      const offset = (parseInt(page) - 1) * Nlimit;
+      const Nlimit = parseInt(String(limit), 10);
+      const offset = (parseInt(String(page), 10) - 1) * Nlimit;
 
       const whereClause: any = { consumerId: userId };
 
@@ -41,31 +45,33 @@ export class InventoryService {
       let order: any = [['createdAt', 'DESC']];
       const sortValue = sort.toLowerCase() || 'newest';
 
-      switch (sortValue) {
-        case 'newest':
-          order = [['createdAt', 'DESC']];
-          break;
-        case 'oldest':
-          order = [['createdAt', 'ASC']];
-          break;
-        case 'name_asc':
-          order = [
-            [
-              { model: this.pkgRepo.consumerProductModel, as: 'product' },
-              'itemName',
-              'ASC',
-            ],
-          ];
-          break;
-        case 'name_desc':
-          order = [
-            [
-              { model: this.pkgRepo.consumerProductModel, as: 'product' },
-              'itemName',
-              'DESC',
-            ],
-          ];
-          break;
+      if (sortValue) {
+        switch (sortValue) {
+          case 'newest':
+            order = [['createdAt', 'DESC']];
+            break;
+          case 'oldest':
+            order = [['createdAt', 'ASC']];
+            break;
+          case 'name_asc':
+            order = [
+              [
+                { model: this.pkgRepo.consumerProductModel, as: 'product' },
+                'itemName',
+                'ASC',
+              ],
+            ];
+            break;
+          case 'name_desc':
+            order = [
+              [
+                { model: this.pkgRepo.consumerProductModel, as: 'product' },
+                'itemName',
+                'DESC',
+              ],
+            ];
+            break;
+        }
       }
 
       const includeClause: any[] = [
@@ -105,7 +111,7 @@ export class InventoryService {
         pagination: {
           total,
           totalPages: Math.ceil(total / Nlimit),
-          currentPage: parseInt(page),
+          currentPage: parseInt(String(page)),
         },
       };
     } catch (err) {
@@ -113,7 +119,10 @@ export class InventoryService {
     }
   }
 
-  async consumerProducts(user: getUser, body: any) {
+  /**
+   * @description consumerProducts with stock count
+   */
+  async consumerProducts(user: getUser, body: DTO.ConsumerProductsDto) {
     try {
       const { userId } = user;
       const { page = 1, limit = 10 } = body;
@@ -134,13 +143,13 @@ export class InventoryService {
           pagination: {
             total: 0,
             totalPages: 0,
-            currentPage: parseInt(page),
+            currentPage: parseInt(String(page), 10),
           },
         };
       }
 
-      const Nlimit = parseInt(limit);
-      const offset = (parseInt(page) - 1) * Nlimit;
+      const Nlimit = parseInt(String(limit), 10);
+      const offset = (parseInt(String(page), 10) - 1) * Nlimit;
 
       const { rows: products, count: total } =
         await this.pkgRepo.consumerProductModel.findAndCountAll({
@@ -169,6 +178,7 @@ export class InventoryService {
         return acc;
       }, {});
 
+      //   Attach stock count to each product
       const productsWithStock = products.map((p) => ({
         ...p,
         stockCount: stockMap[p.product_id] || 0,
@@ -180,15 +190,19 @@ export class InventoryService {
         pagination: {
           total,
           totalPages: Math.ceil(total / Nlimit),
-          currentPage: parseInt(page),
+          currentPage: parseInt(String(page), 10),
         },
       };
     } catch (err) {
+      console.log('consumerProducts error->', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
-  async productVariants(body: any) {
+  /**
+   * @description Variant ( size: total ) detail view
+   */
+  async productVariants(body: DTO.ProductVariantsDto) {
     const { productId } = body;
     try {
       const detail = await this.pkgRepo.consumerProductModel.findOne({
@@ -206,10 +220,14 @@ export class InventoryService {
         data: detail,
       };
     } catch (err) {
+      console.log('productVariants err', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
+  /**
+   * @description brands of user inventory for filter
+   */
   async inventoryBrands(user: getUser) {
     try {
       const { userId } = user;
@@ -241,10 +259,14 @@ export class InventoryService {
         data: uniqueBrands,
       };
     } catch (err) {
+      console.log('invenoryBrands err', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
+  /**
+   * @description hyperAdd inventory Quickly Add/Remove quantity from chart.
+   */
   async hyperAddinventory(body: any) {
     const sequelize = this.productRepo.inventoryModel.sequelize;
     if (!sequelize) {

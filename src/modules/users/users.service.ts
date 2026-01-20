@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
 import { getUser } from 'src/common/interfaces/common/getUser';
 import { PackageRepository } from 'src/db/repository/package.repository';
+import { StoreRepository } from 'src/db/repository/store.repository';
 import { UserRepository } from 'src/db/repository/user.repository';
 import { PACKAGE_STATUS, PAYMENT_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
@@ -13,6 +14,7 @@ export class UsersService {
   constructor(
     private readonly userRepo: UserRepository,
     private readonly pkgRepo: PackageRepository,
+    private readonly storeRepo: StoreRepository,
     private sequelize: Sequelize,
   ) {}
 
@@ -384,8 +386,7 @@ export class UsersService {
           attributes: ['country'],
         });
       } else {
-        const StoreLocation = this.sequelize.model('StoreLocation');
-        addressRecord = await StoreLocation.findOne({
+        addressRecord = await this.storeRepo.storeLocationMappingModel.findOne({
           where: { store_id: storeId, default_store_location: true },
           attributes: ['country'],
         });

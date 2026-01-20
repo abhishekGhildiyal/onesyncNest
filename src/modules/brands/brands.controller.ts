@@ -15,14 +15,7 @@ import { PERMISSIONS } from '../../common/constants/permissions';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { BrandsService } from './brands.service';
-import {
-  BrandProductsDto,
-  BrandUpdateDto,
-  CreatePackageDto,
-  LinkCustomerDto,
-  RevokeAccessDto,
-  UpdatePackageDto,
-} from './dto/brands.dto';
+import * as DTO from './dto/brands.dto';
 
 @ApiTags('Brands')
 @Controller('brands')
@@ -42,7 +35,7 @@ export class BrandsController {
    * @description Toggle brand type (Public/Private)
    */
   @Post('update')
-  async toggleType(@Body() body: BrandUpdateDto) {
+  async toggleType(@Body() body: DTO.BrandUpdateDto) {
     return this.brandsService.toggleType(body);
   }
 
@@ -52,20 +45,9 @@ export class BrandsController {
   @Post('products')
   async brandProducts(
     @GetUser() user: getUser,
-    @Body() body: BrandProductsDto,
+    @Body() body: DTO.BrandProductsDto,
   ) {
     return this.brandsService.brandProducts(user, body);
-  }
-
-  /**
-   * @description Get brand products for access list
-   */
-  @Post('products/access-list')
-  async brandProductsAccessList(
-    @GetUser() user: getUser,
-    @Body() body: BrandProductsDto,
-  ) {
-    return this.brandsService.brandProductsAcessList(user, body);
   }
 
   /**
@@ -95,7 +77,7 @@ export class BrandsController {
   @RequiredPermissions(PERMISSIONS.AccessOrder.name)
   async createPackage(
     @GetUser() user: getUser,
-    @Body() body: CreatePackageDto,
+    @Body() body: DTO.CreatePackageDto,
   ) {
     return this.brandsService.createPackage(user, body);
   }
@@ -106,7 +88,10 @@ export class BrandsController {
   @Post('package/link-customer')
   @UseGuards(PermissionGuard)
   @RequiredPermissions(PERMISSIONS.AccessOrder.name)
-  async linkCustomer(@GetUser() user: getUser, @Body() body: LinkCustomerDto) {
+  async linkCustomer(
+    @GetUser() user: getUser,
+    @Body() body: DTO.LinkCustomerDto,
+  ) {
     return this.brandsService.linkCustomer(user, body);
   }
 
@@ -118,7 +103,7 @@ export class BrandsController {
   @RequiredPermissions(PERMISSIONS.AccessOrder.name)
   async updatePackage(
     @GetUser() user: getUser,
-    @Body() body: UpdatePackageDto,
+    @Body() body: DTO.UpdatePackageDto,
   ) {
     return this.brandsService.updatePackage(user, body);
   }
@@ -139,7 +124,7 @@ export class BrandsController {
   @Post('package/revoke-access')
   @UseGuards(PermissionGuard)
   @RequiredPermissions(PERMISSIONS.AccessOrder.name)
-  async revokeAccess(@Body() body: RevokeAccessDto) {
+  async revokeAccess(@Body() body: DTO.RevokeAccessDto) {
     return this.brandsService.revokeAccess(body);
   }
 }

@@ -5,6 +5,7 @@ import {
   Inventory,
   InventoryRequest,
   Label,
+  PriceChangeRequest,
   ProductList,
   TagSource,
   Template,
@@ -39,5 +40,7 @@ export class ProductRepository {
 
     @InjectModel(WithdrawnRequest)
     public readonly WithdrawnRequestModel: typeof WithdrawnRequest,
+    @InjectModel(PriceChangeRequest)
+    public readonly priceChangeRequestModel: typeof PriceChangeRequest,
   ) {}
 }

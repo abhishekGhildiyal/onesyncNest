@@ -34,7 +34,7 @@ export class ReducePackageQuantity {
     brandId = undefined,
   }: {
     productId: number;
-    storeId: number;
+    storeId: number | string;
     size: string;
     soldQty: number;
     transaction: Transaction;
@@ -44,27 +44,19 @@ export class ReducePackageQuantity {
     // console.log(`🧩 [reduceSoldQuantityForPackages] Syncing packages...`);
 
     if (!size) {
-      console.warn(
-        `⚠️ Variant ${productId} has undefined size, skipping capacity sync.`,
-      );
+      console.warn(`⚠️ Variant ${productId} has undefined size, skipping capacity sync.`);
       return;
     }
 
     // Step 1: Get ACTUAL remaining stock from VariantModel
-    const remainingVariantStock = await this.productrepo.variantModel.sum(
-      'quantity',
-      {
-        where: {
-          productId,
-          status: 1,
-          [Op.and]: Sequelize.where(
-            Sequelize.fn('TRIM', Sequelize.col('option1Value')),
-            size,
-          ),
-        },
-        transaction,
+    const remainingVariantStock = await this.productrepo.variantModel.sum('quantity', {
+      where: {
+        productId,
+        status: 1,
+        [Op.and]: Sequelize.where(Sequelize.fn('TRIM', Sequelize.col('option1Value')), size),
       },
-    );
+      transaction,
+    });
 
     const remainingStock = remainingVariantStock || 0;
     // console.log(`📦 ACTUAL Remaining Stock for (${productId}, ${size}) = ${remainingStock}`);
@@ -127,11 +119,8 @@ export class ReducePackageQuantity {
 
       const newMaxCapacity = Math.max(0, Number(maxCapacity) - soldQty);
       const newSelectedCapacity =
-        (Number(selectedCapacity) || 0) > remainingStock
-          ? remainingStock
-          : Number(selectedCapacity) || 0;
-      const newConsumerDemand =
-        consumerDemand > remainingStock ? remainingStock : consumerDemand;
+        (Number(selectedCapacity) || 0) > remainingStock ? remainingStock : Number(selectedCapacity) || 0;
+      const newConsumerDemand = consumerDemand > remainingStock ? remainingStock : consumerDemand;
 
       await (qtyRow as any).update(
         {
@@ -141,10 +130,7 @@ export class ReducePackageQuantity {
         { transaction },
       );
 
-      await (qtyItem as any).update(
-        { consumerDemand: newConsumerDemand },
-        { transaction },
-      );
+      await (qtyItem as any).update({ consumerDemand: newConsumerDemand }, { transaction });
 
       // console.log(`✅ Synced Package ${qtyRow.qtyItem.brand.package_id}, Item ${qtyItem.id}`);
     }

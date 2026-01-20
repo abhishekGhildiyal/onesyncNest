@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
+import { Injectable, Logger } from '@nestjs/common';
 import { Templates } from 'src/common/constants/mailTemplates';
 
 @Injectable()
@@ -8,7 +8,12 @@ export class MailService {
 
   constructor(private readonly mailerService: MailerService) {}
 
-  async sendMail(to: string, html: string, subject: string, attachments: any[] = []) {
+  async sendMail(
+    to: string,
+    html: string,
+    subject: string,
+    attachments: any[] = [],
+  ) {
     try {
       await this.mailerService.sendMail({
         to,
@@ -23,6 +28,17 @@ export class MailService {
       return { success: false, to, error: error.message };
     }
   }
+
+  replaceVariablesInTemplate = (template, variables) => {
+    try {
+      for (const key in variables) {
+        template = template.replace(new RegExp(key, 'g'), variables[key]);
+      }
+      return template;
+    } catch (error) {
+      return '';
+    }
+  };
 
   getPopulatedTemplate(slug: string, variables: any = {}) {
     const template = Templates.find((t) => t.slug === slug);
@@ -39,7 +55,12 @@ export class MailService {
     };
   }
 
-  async sendOrderReviewEmail(data: { to: string; orderNumber: string; storeName: string; customerName: string }) {
+  async sendOrderReviewEmail(data: {
+    to: string;
+    orderNumber: string;
+    storeName: string;
+    customerName: string;
+  }) {
     try {
       const { to, orderNumber, storeName, customerName } = data;
       const html = `
@@ -57,7 +78,12 @@ export class MailService {
     }
   }
 
-  async sendOrderConfirmationEmail(data: { to: string; orderNumber: string; storeName: string; customerName: string }) {
+  async sendOrderConfirmationEmail(data: {
+    to: string;
+    orderNumber: string;
+    storeName: string;
+    customerName: string;
+  }) {
     try {
       const { to, orderNumber, storeName, customerName } = data;
       const html = `

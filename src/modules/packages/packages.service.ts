@@ -115,7 +115,7 @@ export class PackagesService {
       await t.commit();
 
       // 🧩 Realtime notify clients (optional)
-      this.socketGateway.emit(`submitted-${packageOrderId}`, {});
+      this.socketGateway.server.emit(`submitted-${packageOrderId}`, {});
 
       return { success: true, message: AllMessages.PYMT_SUCCSS };
     } catch (err) {
@@ -257,7 +257,7 @@ export class PackagesService {
       await order.save({ transaction: t });
       await t.commit();
 
-      this.socketGateway.emit(`submitted-${packageOrderId}`);
+      this.socketGateway.server.emit(`submitted-${packageOrderId}`);
       return { success: true, message: AllMessages.SHP_DTL };
     } catch (err) {
       await t.rollback();
@@ -355,11 +355,12 @@ export class PackagesService {
       await t.commit();
 
       // Sockets
-      this.socketGateway.emit(`submittedToInbound-${orderId}`, {
+      this.socketGateway.server.emit(`submittedToInbound-${orderId}`, {
         storeName: (order as any).store?.store_name,
       });
-      if (customerId) this.socketGateway.emit(`statusChanged-${customerId}`);
-      this.socketGateway.emit(`statusChanged-${storeId}`);
+      if (customerId)
+        this.socketGateway.server.emit(`statusChanged-${customerId}`);
+      this.socketGateway.server.emit(`statusChanged-${storeId}`);
 
       return { success: true, message: AllMessages.PKG_CLSD };
     } catch (err) {
@@ -624,7 +625,7 @@ export class PackagesService {
 
       await t.commit();
       if (order?.store_id) {
-        this.socketGateway.emit(
+        this.socketGateway.server.emit(
           `updateQty-${order.store_id}-${packageOrderId}`,
         );
       }
@@ -702,7 +703,7 @@ export class PackagesService {
       await t.commit();
       const anyOrder = order as any;
       if (anyOrder?.store?.store_id) {
-        this.socketGateway.emit(
+        this.socketGateway.server.emit(
           `updateQty-${anyOrder.store.store_id}-${packageOrderId}`,
         );
       }
@@ -785,11 +786,11 @@ export class PackagesService {
       await pkgOrder.save({ transaction: t });
       await t.commit();
 
-      this.socketGateway.emit(`processToCompleted-${orderId}`, {
+      this.socketGateway.server.emit(`processToCompleted-${orderId}`, {
         consumerName: user.fullName,
       });
-      this.socketGateway.emit(`statusChanged-${pkgOrder.store_id}`);
-      this.socketGateway.emit(`statusChanged-${user.userId}`);
+      this.socketGateway.server.emit(`statusChanged-${pkgOrder.store_id}`);
+      this.socketGateway.server.emit(`statusChanged-${user.userId}`);
 
       // 🔥 Background task for Consumer Inventory
       const { pDate, storeId = '' } = body;

@@ -6,7 +6,7 @@ export async function generateOrderId({
   model,
   transaction,
 }: {
-  storeId: number;
+  storeId: number | string;
   prefix: string;
   numberLength?: number;
   fieldName?: string;

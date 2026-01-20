@@ -13,6 +13,7 @@ import { BRAND_STATUS, PACKAGE_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
 import { generateOrderId } from '../../common/helpers/order-generator.helper';
 import { sortSizes } from '../../common/helpers/sort-sizes.helper';
+import * as DTO from './dto/product.dto';
 
 @Injectable()
 export class ProductsService {
@@ -168,6 +169,191 @@ export class ProductsService {
   }
 
   /**
+   * @description Brand products for access list
+   */
+  async brandProductsAcessList(user: getUser, body: DTO.BrandProductsDto) {
+    try {
+      const { storeId } = user;
+      const { brandIds } = body;
+
+      if (!Array.isArray(brandIds) || brandIds.length === 0) {
+        throw new BadRequestException('brandIds must be a non-empty array.');
+      }
+
+      // Step 1: Fetch products
+      const products = await this.productRepo.productListModel.findAll({
+        where: {
+          storeId: storeId,
+          brand_id: { [Op.in]: brandIds },
+        },
+        attributes: [
+          'product_id',
+          'itemName',
+          'image',
+          'brand_id',
+          'type',
+          'skuNumber',
+        ],
+        raw: true,
+      });
+
+      const productIds = products.map((p) => p.product_id);
+
+      // Step 2: Fetch variants
+      const variants = await this.productRepo.variantModel.findAll({
+        where: {
+          productId: { [Op.in]: productIds },
+          status: 1,
+          quantity: { [Op.gt]: 0 },
+          option1Value: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] },
+        },
+        attributes: ['id', 'quantity', 'option1Value', 'productId'],
+        raw: true,
+      });
+
+      // Step 3: Fetch brand names
+      const brandIdList = [...new Set(products.map((p) => p.brand_id))];
+      const brands = await this.productRepo.brandModel.findAll({
+        where: { id: { [Op.in]: brandIdList } },
+        attributes: ['id', 'brandName'],
+        raw: true,
+      });
+
+      const brandMap = new Map(brands.map((b) => [b.id, b.brandName.trim()]));
+      const variantGroup = new Map();
+
+      for (const v of variants) {
+        if (!variantGroup.has(v.productId)) variantGroup.set(v.productId, []);
+        variantGroup.get(v.productId).push(v);
+      }
+
+      const groupedByBrand: any = {};
+      const groupedByType: any = {};
+      const groupedByBrandAndType: any = {};
+      const brandDisplayNames: any = {};
+
+      for (const product of products) {
+        const rawBrandName = brandMap.get(product.brand_id) || 'Unknown';
+        const normalizedBrandName = rawBrandName.toLowerCase();
+        const type = product.type || '-';
+
+        const productVariants = variantGroup.get(product.product_id) || [];
+        if (productVariants.length === 0) continue;
+
+        // Build variant size and quantity map
+        const variantMap = new Map();
+        for (const variant of productVariants) {
+          const size = (variant.option1Value || 'unknown').trim();
+          variantMap.set(
+            size,
+            (variantMap.get(size) || 0) + (variant.quantity || 0),
+          );
+        }
+
+        const sizeAndQuantity = sortSizes(
+          Array.from(variantMap.entries()).map(([size, quantity]) => ({
+            size,
+            quantity,
+          })),
+        );
+
+        const productObj = {
+          name: product.itemName || 'Unnamed',
+          product_id: product.product_id,
+          sku: product.skuNumber,
+          type: product.type,
+          itemName: product.itemName,
+          image: product.image,
+          brand_id: product.brand_id,
+          brandData: { brandName: rawBrandName },
+          variants: productVariants,
+          sizeAndQuantity,
+        };
+
+        // --- Group by Brand ---
+        if (!groupedByBrand[normalizedBrandName]) {
+          groupedByBrand[normalizedBrandName] = [];
+          brandDisplayNames[normalizedBrandName] = rawBrandName;
+        }
+        groupedByBrand[normalizedBrandName].push(productObj);
+
+        // --- Group by Type ---
+        if (!groupedByType[type]) groupedByType[type] = [];
+        groupedByType[type].push(productObj);
+
+        // --- Group by Brand → Type ---
+        if (!groupedByBrandAndType[normalizedBrandName]) {
+          groupedByBrandAndType[normalizedBrandName] = {};
+          brandDisplayNames[normalizedBrandName] = rawBrandName;
+        }
+        if (!groupedByBrandAndType[normalizedBrandName][type]) {
+          groupedByBrandAndType[normalizedBrandName][type] = [];
+        }
+        groupedByBrandAndType[normalizedBrandName][type].push(productObj);
+      }
+
+      // --- Sort Brand Arrays ---
+      for (const brand in groupedByBrand) {
+        groupedByBrand[brand].sort((a: any, b: any) =>
+          (a.itemName || '')
+            .toLowerCase()
+            .localeCompare((b.itemName || '').toLowerCase()),
+        );
+      }
+
+      // --- Sort Brand→Type Arrays, "-" type last ---
+      const sortedBrandTypeData: any = {};
+      for (const brand in groupedByBrandAndType) {
+        const sortedTypes = Object.keys(groupedByBrandAndType[brand]).sort(
+          (a, b) => {
+            if (a === '-' || a.trim() === '') return 1; // push "-" last
+            if (b === '-' || b.trim() === '') return -1;
+            return a.localeCompare(b);
+          },
+        );
+
+        const sortedTypeObj: any = {};
+        for (const type of sortedTypes) {
+          groupedByBrandAndType[brand][type].sort((a: any, b: any) =>
+            (a.itemName || '')
+              .toLowerCase()
+              .localeCompare((b.itemName || '').toLowerCase()),
+          );
+          sortedTypeObj[type] = groupedByBrandAndType[brand][type];
+        }
+
+        const displayName = brandDisplayNames[brand] || brand;
+        sortedBrandTypeData[displayName] = sortedTypeObj;
+      }
+
+      // --- Sort brands alphabetically, push "-" last ---
+      const sortedBrandData = Object.keys(groupedByBrand)
+        .sort((a, b) => {
+          if (a === '-' || a.trim() === '') return 1;
+          if (b === '-' || b.trim() === '') return -1;
+          return a.localeCompare(b);
+        })
+        .reduce((acc: any, normBrand) => {
+          const displayName = brandDisplayNames[normBrand] || normBrand;
+          acc[displayName] = groupedByBrand[normBrand];
+          return acc;
+        }, {});
+
+      return {
+        success: true,
+        message: AllMessages.FTCH_PRODUCTS,
+        data: {
+          groupedByBrand: sortedBrandData,
+          groupedByBrandAndType: sortedBrandTypeData,
+        },
+      };
+    } catch (err) {
+      console.error('❌ brandProducts error:', err);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+    }
+  }
+
+  /**
    * @description Toggle brand type ("Public", "Private")
    * @param body
    * @returns
@@ -310,7 +496,7 @@ export class ProductsService {
     }
   }
 
-  async createPackage(user: any, body: any) {
+  async createPackage(user: getUser, body: any) {
     const t = await this.sequelize.transaction();
     try {
       const { storeId, userId } = user;
@@ -338,7 +524,7 @@ export class ProductsService {
         const pBrand = await this.pkgRepo.accessPackageBrandModel.create(
           {
             package_id: pkg.id,
-            brand_id: b.brandId,
+            brand_id: b.brand_id,
             selected: true,
           },
           { transaction: t },
@@ -347,7 +533,7 @@ export class ProductsService {
         for (const item of b.items || []) {
           const pItem = await this.pkgRepo.accessPackageBrandItemsModel.create(
             {
-              product_id: item.productId,
+              product_id: item.product_id,
               packageBrand_id: pBrand.id,
               price: item.price,
             },
@@ -383,20 +569,71 @@ export class ProductsService {
     }
   }
 
-  async AllCustomers(user: any, query: any) {
+  async AllCustomers(user: getUser, query: DTO.AllCustomersDto) {
     try {
       const { search = '', linked = 'true' } = query;
       const trimmedSearch = (search as string).trim();
       const whereCondition: any = {};
 
+      /**
+            |--------------------------------------------------
+            | CASE 1: linked = true  (DEFAULT)
+            | Return ONLY linked customers
+            |--------------------------------------------------
+            */
       if (linked === 'true') {
-        // This is simplified; in production, you'd join more properly
-        const combinedIds = []; // Placeholder for actual linked logic
-        if (combinedIds.length === 0 && linked === 'true') {
-          // Return empty if linked requested but none found (simplified)
+        const linkedCustomers = await this.pkgRepo.packageOrderModel.findAll({
+          where: { store_id: user.storeId },
+          attributes: ['id'],
+          include: [
+            {
+              model: this.pkgRepo.packageCustomerModel,
+              as: 'customers',
+              attributes: ['customer_id'],
+            },
+          ],
+        });
+
+        const accessCustomers =
+          await this.pkgRepo.accessPackageOrderModel.findAll({
+            where: { store_id: user.storeId },
+            attributes: ['id'],
+            include: [
+              {
+                model: this.pkgRepo.accessPackageCustomerModel,
+                as: 'customers',
+                attributes: ['customer_id'],
+              },
+            ],
+          });
+
+        const linkedIds = linkedCustomers.flatMap((c: any) =>
+          c.customers.map((cc) => cc.customer_id),
+        );
+        const accessIds = accessCustomers.flatMap((c: any) =>
+          c.customers.map((cc) => cc.customer_id),
+        );
+
+        // Make unique list
+        const combinedIds = Array.from(new Set([...linkedIds, ...accessIds]));
+
+        if (combinedIds.length === 0) {
+          return {
+            success: true,
+            message: 'No linked customers found',
+            data: [],
+          };
         }
+
+        // Apply condition: only fetch linked customers
+        whereCondition.id = { [Op.in]: combinedIds };
       }
 
+      /**
+    |--------------------------------------------------
+    | SEARCH filter (works for both linked/unlinked)
+    |--------------------------------------------------
+    */
       if (trimmedSearch) {
         whereCondition[Op.or] = [
           { email: { [Op.like]: `%${trimmedSearch}%` } },
@@ -405,9 +642,31 @@ export class ProductsService {
         ];
       }
 
+      /**
+    |--------------------------------------------------
+    | Fetch final customers
+    |--------------------------------------------------
+    */
       const customers = await this.userRepo.userModel.findAll({
         where: whereCondition,
-        attributes: { exclude: ['password'] },
+        include: [
+          {
+            model: this.userRepo.userStoreMappingModel,
+            as: 'mappings',
+            required: true,
+            attributes: [],
+            include: [
+              {
+                model: this.userRepo.roleModel,
+                as: 'role',
+                attributes: [],
+                where: { roleName: 'Consumer' },
+                required: true,
+              },
+            ],
+          },
+        ],
+        attributes: { exclude: ['password', 'issuePaymentTo'] },
         order: [
           ['firstName', 'ASC'],
           ['lastName', 'ASC'],
