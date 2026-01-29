@@ -1,12 +1,13 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
+import { HelpersModule } from 'src/common/helpers/helpers.module';
 import { DatabaseModule } from 'src/db/database.module';
 import { ShopifyController } from './shopify.controller';
-import { ShopifyService } from './shopify.service';
+import { ShopifyServiceFactory } from './shopify.service';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, forwardRef(() => HelpersModule)],
   controllers: [ShopifyController],
-  providers: [ShopifyService],
-  exports: [ShopifyService],
+  providers: [ShopifyServiceFactory],
+  exports: [ShopifyServiceFactory],
 })
 export class ShopifyModule {}

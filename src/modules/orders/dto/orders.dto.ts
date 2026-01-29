@@ -21,6 +21,14 @@ export class OrderIdParamDto {
   @IsNumber()
   orderId: number;
 }
+export class saveAsDraftDto {
+  @IsNotEmpty()
+  @IsNumber()
+  packageId: number;
+
+  @IsNotEmpty()
+  brandData: any[];
+}
 
 export class OrderIdBrandIdParamDto {
   @IsNotEmpty()
@@ -132,6 +140,13 @@ export class UpdateQuantityDto {
   @ValidateNested({ each: true })
   @Type(() => ItemQuantityDto)
   items: ItemQuantityDto[];
+
+  @IsOptional()
+  @IsNumber()
+  packageOrderId?: number;
+
+  @IsOptional()
+  isSearch: Boolean;
 }
 
 /* -------------------- ADD NOTES -------------------- */
@@ -271,6 +286,29 @@ export class CheckStockDto {
   @ValidateNested({ each: true })
   @Type(() => StockItemDto)
   items: StockItemDto[];
+}
+
+export class SyncStockDto {
+  @IsNotEmpty()
+  orderId: number;
+
+  @IsNotEmpty()
+  brandId: number;
+
+  @IsNotEmpty()
+  productId: number;
+
+  @IsNotEmpty()
+  @IsArray()
+  sizes: string[] | number[];
+}
+
+export class SyncFullStock {
+  @IsNotEmpty()
+  orderId: number;
+
+  @IsNotEmpty()
+  brandIds: string[] | number[];
 }
 
 /* -------------------- UPDATE ACCESS VARIANT QUANTITY -------------------- */

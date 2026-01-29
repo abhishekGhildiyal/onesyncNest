@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { HelpersModule } from './common/helpers/helpers.module';
 import { DatabaseModule } from './db/database.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { MailModule } from './modules/mail/mail.module';
@@ -43,6 +44,7 @@ import { UsersModule } from './modules/users/users.module';
     }),
     DatabaseModule, // all entities and associations are loaded here
 
+    HelpersModule,
     MailModule,
     InventoryModule,
     ShopifyModule,

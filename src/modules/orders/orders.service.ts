@@ -4,18 +4,19 @@ import { Sequelize } from 'sequelize-typescript';
 import type { getUser } from 'src/common/interfaces/common/getUser';
 import { ORDER_ITEMS, PACKAGE_STATUS, PAYMENT_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
-import { generateOrderId } from '../../common/helpers/order-generator.helper';
 import { sortSizes } from '../../common/helpers/sort-sizes.helper';
 import { MailService } from '../mail/mail.service';
 
+import { ROLES } from 'src/common/constants/permissions';
 import { ManualOrderHelperService } from 'src/common/helpers/create-manual-order.helper';
+import { SaveOrderAsDraftHelper } from 'src/common/helpers/save-order-as-draft.helper';
 import { MarkInventorySold } from 'src/common/helpers/sold-inventory.helper';
 import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
 import { UserRepository } from 'src/db/repository/user.repository';
 import { TemplatesSlug } from '../mail/mail.constants';
-import { ShopifyService } from '../shopify/shopify.service';
+import { ShopifyServiceFactory } from '../shopify/shopify.service';
 import { SocketGateway } from '../socket/socket.gateway';
 import * as DTO from './dto/orders.dto';
 
@@ -30,19 +31,23 @@ export class OrdersService {
     private socketGateway: SocketGateway,
     private readonly mailService: MailService,
     private readonly sequelize: Sequelize,
-    private readonly shopifyService: ShopifyService,
+    private readonly ShopifyServiceFactory: ShopifyServiceFactory,
 
     private readonly createManualOrderService: ManualOrderHelperService,
     private readonly MarkInventorySold: MarkInventorySold,
+    private readonly SaveDraftService: SaveOrderAsDraftHelper,
   ) {}
 
-  async getPackageBrands(user: any, params: any, query: any) {
+  /**
+   * @description Get package order detail by order ID (2 APIs)
+   */
+  async getPackageBrands(user: getUser, params: DTO.OrderIdParamDto, query: any) {
     try {
       const { orderId } = params;
       const { userId, roleName } = user;
       const isAccess = query.access === 'true';
 
-      if (roleName === 'Consumer') {
+      if (roleName === ROLES.CONSUMER) {
         const linked = isAccess
           ? await this.pkgRepo.accessPackageCustomerModel.findOne({
               where: { package_id: orderId, customer_id: userId },
@@ -53,39 +58,61 @@ export class OrdersService {
         if (!linked) throw new BadRequestException(AllMessages.PAKG_NF);
       }
 
+      // 🔁 Dynamically choose models
       const OrderModelRef = (isAccess ? this.pkgRepo.accessPackageOrderModel : this.pkgRepo.packageOrderModel) as any;
+
       const BrandModelRef = (isAccess ? this.pkgRepo.accessPackageBrandModel : this.pkgRepo.packageBrandModel) as any;
+
+      const pkgItemsModelRef = (
+        isAccess ? this.pkgRepo.accessPackageBrandItemsModel : this.pkgRepo.packageBrandItemsModel
+      ) as any;
 
       const packageOrder = await OrderModelRef.findByPk(orderId);
       if (!packageOrder) throw new BadRequestException(AllMessages.PAKG_NF);
 
-      let salesAgent, logisticsAgent;
-      if (packageOrder.sales_agent_id) {
-        salesAgent = await this.userRepo.userModel.findOne({
-          where: { id: packageOrder.sales_agent_id },
-          attributes: ['id', 'firstName', 'lastName', 'email'],
-        });
-      }
-      if (packageOrder.employee_id) {
-        logisticsAgent = await this.userRepo.userModel.findOne({
-          where: { id: packageOrder.employee_id },
-          attributes: ['id', 'firstName', 'lastName', 'email'],
-        });
-      }
+      const findUser = (id?: number) =>
+        id
+          ? this.userRepo.userModel.findOne({
+              where: { id },
+              attributes: ['id', 'firstName', 'lastName', 'email'],
+            })
+          : null;
 
+      const [salesAgent, logisticsAgent] = await Promise.all([
+        findUser(packageOrder.sales_agent_id),
+        findUser(packageOrder.employee_id),
+      ]);
+
+      // 🚫 Role-based restrictions
       if (roleName === 'Consumer') {
         if (packageOrder.isManualOrder && packageOrder.status === PACKAGE_STATUS.IN_PROGRESS) {
           throw new BadRequestException(AllMessages.PAKG_NF);
         }
-      } else if (packageOrder.status === PACKAGE_STATUS.DRAFT) {
+      } else if (
+        // for Admin or any non-consumer role
+        packageOrder.status === PACKAGE_STATUS.DRAFT
+      ) {
         throw new BadRequestException(AllMessages.PAKG_NF);
       }
 
+      // const isSelectedFilterRequired =
+      //     !isAccess &&
+      //     // packageOrder.status !== PACKAGE_STATUS.CREATED &&
+      //     packageOrder.status !== PACKAGE_STATUS.SUBMITTED &&
+      //     packageOrder.status !== PACKAGE_STATUS.DRAFT;
+      // const brandWhere = {
+      //     package_id: packageOrder.id,
+      //     ...(isSelectedFilterRequired && { selected: true }),
+      // };
+
       let brandWhere: any = { package_id: packageOrder.id };
+
       if (!isAccess) {
         if (packageOrder.status === PACKAGE_STATUS.CONFIRM && packageOrder.isManualOrder) {
-          // fetch all brands
+          // fetch all brands → no selected filter
+          brandWhere = { package_id: packageOrder.id };
         } else if (packageOrder.status !== PACKAGE_STATUS.SUBMITTED && packageOrder.status !== PACKAGE_STATUS.DRAFT) {
+          // fetch only selected brands
           brandWhere.selected = true;
         }
       }
@@ -103,9 +130,6 @@ export class OrdersService {
       });
 
       const brandIds = packageBrands.map((b) => b.id);
-      const pkgItemsModelRef: any = isAccess
-        ? this.pkgRepo.accessPackageBrandItemsModel
-        : this.pkgRepo.packageBrandItemsModel;
 
       const showCreateItem = await pkgItemsModelRef.findOne({
         where: {
@@ -119,7 +143,7 @@ export class OrdersService {
         .map((brand: any) => ({
           brand_id: brand.id,
           brandName: brand.brandData?.brandName || 'Unknown',
-          brandMainId: brand.brandData?.id,
+          brandMainId: brand.brandData?.id, // brand actual id in brand model
         }))
         .sort((a, b) => a.brandName.localeCompare(b.brandName, 'en', { sensitivity: 'base' }));
 
@@ -132,29 +156,34 @@ export class OrdersService {
           brands: brandList,
           packageId: packageOrder.id,
           packageStatus: packageOrder.status,
-          paymentStatus: (packageOrder as any).paymentStatus,
-          shipmentStatus: (packageOrder as any).shipmentStatus,
-          showPrices: (packageOrder as any).showPrices,
-          isManualOrder: packageOrder.isManualOrder || false,
+          paymentStatus: (packageOrder as any)?.paymentStatus,
+          shipmentStatus: (packageOrder as any)?.shipmentStatus,
+          showPrices: (packageOrder as any)?.showPrices,
+          isManualOrder: packageOrder?.isManualOrder || false,
           showCreateItem: !showCreateItem,
           salesAgent,
           logisticsAgent,
         },
       };
     } catch (err) {
-      if (err instanceof BadRequestException) throw err;
+      console.error('❌ getPackageBrands error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
+  /**
+   * @description Get access list
+   */
   async accessList(user: any, body: any) {
     try {
       const { userId } = user;
       const { status, page = 1, limit = 10 } = body;
+
       const consumerStore = await this.pkgRepo.accessPackageCustomerModel.findAll({
         where: { customer_id: userId },
         attributes: ['package_id'],
       });
+
       const packageIds = consumerStore.map((item) => item.package_id);
       if (packageIds.length === 0)
         return {
@@ -162,10 +191,12 @@ export class OrdersService {
           data: [],
           pagination: { total: 0, totalPages: 0 },
         };
+
       const whereCond: any = {
         id: { [Op.in]: packageIds },
         status: status || PACKAGE_STATUS.ACCESS,
       };
+
       const { rows: orders, count: total } = await this.pkgRepo.accessPackageOrderModel.findAndCountAll({
         where: whereCond,
         limit: Number(limit),
@@ -179,17 +210,22 @@ export class OrdersService {
           },
         ],
       });
+
       return {
         success: true,
         data: orders,
         pagination: { total, totalPages: Math.ceil(total / Number(limit)) },
       };
     } catch (err) {
+      console.log('errr in accesslist-> ', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
-  async allOrders(user: any, body: any) {
+  /**
+   * @description Get all orders for consumer
+   */
+  async allOrders(user: any, body: DTO.GetOrdersDto) {
     try {
       const { userId } = user;
       const { status, page = 1, limit = 10 } = body;
@@ -197,6 +233,7 @@ export class OrdersService {
         where: { customer_id: userId },
         attributes: ['package_id'],
       });
+
       const packageIds = consumerStore.map((item) => item.package_id);
       if (packageIds.length === 0)
         return {
@@ -204,12 +241,15 @@ export class OrdersService {
           data: [],
           pagination: { total: 0, totalPages: 0 },
         };
+
+      // Step 2: Build query condition
       const whereCond: any = {
         id: packageIds,
         [Op.not]: {
           [Op.and]: [{ status: PACKAGE_STATUS.IN_PROGRESS }, { isManualOrder: true }],
         },
       };
+
       if (status) {
         switch (status) {
           case PACKAGE_STATUS.CREATED:
@@ -217,24 +257,37 @@ export class OrdersService {
               [Op.in]: [PACKAGE_STATUS.CREATED, PACKAGE_STATUS.SUBMITTED, PACKAGE_STATUS.INITIATED],
             };
             break;
+
           case PACKAGE_STATUS.CONFIRM:
             whereCond.status = {
               [Op.in]: [PACKAGE_STATUS.IN_PROGRESS, PACKAGE_STATUS.CONFIRM],
             };
             whereCond.isManualOrder = false;
             break;
+
           case PACKAGE_STATUS.CLOSE:
             whereCond.status = PACKAGE_STATUS.CLOSE;
             break;
+
           default:
             whereCond.status = status;
         }
       }
+
+      //   Fetch orders filtered by customer's package_ids
       const { rows: orders, count: total } = await this.pkgRepo.packageOrderModel.findAndCountAll({
         where: whereCond,
         limit: Number(limit),
         offset: (Number(page) - 1) * Number(limit),
         order: [['updatedAt', 'DESC']],
+        attributes: {
+          exclude: [
+            'updatedAt',
+            // "paymentStatus",
+            // "shipmentStatus",
+            'store_id',
+          ],
+        },
         include: [
           {
             model: this.storeRepo.storeModel,
@@ -243,21 +296,20 @@ export class OrdersService {
           },
         ],
       });
+
       return {
         success: true,
         data: orders,
         pagination: { total, totalPages: Math.ceil(total / Number(limit)) },
       };
     } catch (err) {
+      console.log('err in allorders-> ', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
   /**
-   * @description get store orders
-   * @param user
-   * @param body
-   * @returns
+   * @description Get all orders of store for admin
    */
   async storeOrders(user: getUser, body: any) {
     try {
@@ -483,22 +535,30 @@ export class OrdersService {
     }
   }
 
+  /**
+   * @description Get Brand Products (for both seller & consumer)
+   */
+  // 11 july new changes (dynamic quantity)
   async getPackageBrandProducts(params: any, query: any) {
     try {
       const { orderId, brandId } = params;
       const isAccess = query.access === 'true';
 
       const OrderModel: any = isAccess ? this.pkgRepo.accessPackageOrderModel : this.pkgRepo.packageOrderModel;
+
       const BrandItemsModel: any = isAccess
         ? this.pkgRepo.accessPackageBrandItemsModel
         : this.pkgRepo.packageBrandItemsModel;
+
       const BrandItemsCapacityModel: any = isAccess
         ? this.pkgRepo.accessPackageBrandItemsCapacityModel
         : this.pkgRepo.packageBrandItemsCapacityModel;
+
       const BrandItemsQtyModel: any = isAccess
         ? this.pkgRepo.accessPackageBrandItemsQtyModel
         : this.pkgRepo.packageBrandItemsQtyModel;
 
+      // Fetch order to check status
       const packageOrderData = await OrderModel.findByPk(orderId, {
         attributes: ['status'],
       });
@@ -508,6 +568,8 @@ export class OrdersService {
         !isAccess &&
         packageOrderData.status !== PACKAGE_STATUS.SUBMITTED &&
         packageOrderData.status !== PACKAGE_STATUS.DRAFT;
+
+      // ✅ when only 1 item sold and qty bcom 0 it disapear
       const showDemandStatuses = [
         PACKAGE_STATUS.CONFIRM,
         PACKAGE_STATUS.STORE_CONFIRM,
@@ -515,8 +577,10 @@ export class OrdersService {
         PACKAGE_STATUS.COMPLETED,
         PACKAGE_STATUS.CLOSE,
       ];
+
       const showDemand = showDemandStatuses.includes(packageOrderData.status);
 
+      // Build include array dynamically
       const includeArray: any[] = [
         {
           model: this.productRepo.productListModel,
@@ -565,10 +629,12 @@ export class OrdersService {
         );
       }
 
+      // Fetch products for this brand
       const packageItems = await BrandItemsModel.findAll({
         where: { packageBrand_id: brandId },
         include: includeArray,
       });
+
       const result: any[] = [];
 
       for (const item of packageItems) {
@@ -586,11 +652,13 @@ export class OrdersService {
         const variants: any[] = [];
 
         if (!isAccess) {
+          // Normal mode: capacities
           for (const cap of item.capacities || []) {
             const variant = cap.variant;
             if (!variant) continue;
             const size = (variant.option1Value || 'Unknown').trim();
             const stockQty = variant.quantity || 0;
+
             const price =
               variant.accountType === '1' ? variant.cost || 0 : variant.accountType === '0' ? variant.payout || 0 : 0;
 
@@ -602,6 +670,7 @@ export class OrdersService {
               stock_quantity: stockQty,
               price,
             });
+
             if (!sizeAndQuantity[size])
               sizeAndQuantity[size] = {
                 quantity: 0,
@@ -614,12 +683,16 @@ export class OrdersService {
             sizeAndQuantity[size].totalCost += stockQty * price;
           }
 
+          // Quantities / consumer demand
           let totalSelectedCapacity = 0;
           for (const qty of item.sizeQuantities || []) {
+            // if (qty.maxCapacity === 0) continue;
+
             const size = (qty.variant_size || 'Unknown').trim();
             const selected = qty.selectedCapacity || 0;
             totalSelectedCapacity += selected;
             consumerDemand[size] = selected;
+
             if (!sizeAndQuantity[size])
               sizeAndQuantity[size] = {
                 quantity: 0,
@@ -628,15 +701,19 @@ export class OrdersService {
                 receivedQuantity: 0,
                 totalCost: 0,
               };
+
             sizeAndQuantity[size].demand += selected;
             sizeAndQuantity[size].shortage += qty.shortage || 0;
             sizeAndQuantity[size].receivedQuantity += qty.receivedQuantity !== null ? qty.receivedQuantity : selected;
           }
+
           if (isInitiated && totalSelectedCapacity === 0) continue;
         } else {
+          // Access mode
           for (const variant of product.variants || []) {
             const size = (variant.option1Value || 'Unknown').trim();
             const stockQty = variant.quantity || 0;
+
             variants.push({
               id: variant.id,
               option1: 'Size',
@@ -644,6 +721,7 @@ export class OrdersService {
               total_quantity: stockQty,
               stock_quantity: stockQty,
             });
+
             if (!sizeAndQuantity[size])
               sizeAndQuantity[size] = {
                 quantity: 0,
@@ -653,6 +731,8 @@ export class OrdersService {
               };
             sizeAndQuantity[size].quantity += stockQty;
           }
+
+          // Ensure demand/shortage/receivedQuantity = 0 for access mode
           for (const size of Object.keys(sizeAndQuantity)) {
             sizeAndQuantity[size].demand = 0;
             sizeAndQuantity[size].shortage = 0;
@@ -661,18 +741,31 @@ export class OrdersService {
         }
 
         const sortedVariants = sortSizes(variants);
-        const sortedSizeAndQuantity = sortSizes(Object.entries(sizeAndQuantity))
-          .map(([size, obj]: [string, any]) => ({
-            size,
-            quantity: obj.quantity,
-            demand: obj.demand,
-            shortage: obj.shortage,
-            receivedQuantity: obj.receivedQuantity,
-            costPrice: obj.quantity > 0 ? obj.totalCost / obj.quantity : 0,
-          }))
-          .filter((entry) =>
-            showDemand ? entry.demand > 0 : !isInitiated ? entry.quantity > 0 : entry.quantity > 0 && entry.demand > 0,
-          );
+
+        // Map and filter sizeAndQuantity
+        const sortedSizeAndQuantity = sortSizes(
+          Object.entries(sizeAndQuantity),
+          // .filter(([_, obj]) => obj.quantity > 0)
+          // .filter(([_, obj]) => !isInitiated && obj.quantity > 0 && obj.demand > 0))
+        )
+          .map(([size, obj]) => {
+            const avgCost = obj.quantity > 0 ? obj.totalCost / obj.quantity : 0;
+            return {
+              size,
+              quantity: obj.quantity,
+              demand: obj.demand,
+              shortage: obj.shortage,
+              receivedQuantity: obj.receivedQuantity,
+              costPrice: avgCost,
+            };
+          })
+          .filter((entry) => {
+            // ✅ If showDemand (special statuses), show only demand>0
+            if (showDemand) return entry.demand > 0;
+
+            // Otherwise, apply normal isInitiated logic
+            return !isInitiated ? entry.quantity > 0 : entry.quantity > 0 && entry.demand > 0;
+          });
 
         result.push({
           name: product.itemName || 'Unnamed',
@@ -692,13 +785,14 @@ export class OrdersService {
       }
 
       result.sort((a, b) => (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()));
+
       return {
         success: true,
         message: AllMessages.FTCH_PRODUCTS,
         data: result,
       };
     } catch (err) {
-      if (err instanceof BadRequestException) throw err;
+      console.error('❌ getPackageBrandProducts error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
@@ -834,7 +928,7 @@ export class OrdersService {
 
         const filteredVariants = variants.filter((v) => v.stock_quantity > 0);
 
-        const sortedVariants = sortSizes(variants);
+        const sortedVariants = sortSizes(filteredVariants);
 
         // Keep size if either stock > 0 OR consumerDemand > 0
         const sortedSizeAndQuantity = sortSizes(
@@ -886,42 +980,62 @@ export class OrdersService {
     }
   }
 
-  async updateVarientQuantity(body: any) {
+  /**
+   * @description Set Product Quantity
+   */
+  async updateVarientQuantity(body: DTO.UpdateQuantityDto) {
     const t = await this.sequelize.transaction();
     try {
       const { brandId, items = [], packageOrderId, isSearch } = body;
 
+      // Check package status once
+      const existingOrder = await this.pkgRepo.packageOrderModel.findOne({
+        where: {
+          id: packageOrderId,
+          // status: {
+          //     [Op.in]: [PACKAGE_STATUS.INITIATED, PACKAGE_STATUS.COMPLETED, PACKAGE_STATUS.IN_REVIEW, PACKAGE_STATUS.IN_PROGRESS],
+          // },
+        },
+        transaction: t,
+      });
+
+      // if (existingOrder) {
+      //     await t.rollback();
+      //     return res.status(400).send({
+      //         success: false,
+      //         message: AllMessages.ALRDY_INITD,
+      //     });
+      // }
+
+      // Prepare bulk updates
+      const itemUpdates = [] as any;
+      const variantUpdates = [] as any;
       let itemTotalQuantity = 0;
-      const updates: Promise<any>[] = [];
+
       for (const item of items) {
         const { itemId, totalQuantity, variants = [] } = item;
+
         if (!itemId) continue;
+
         itemTotalQuantity += totalQuantity;
 
-        updates.push(
-          this.pkgRepo.packageBrandItemsModel.update(
-            { consumerDemand: totalQuantity },
-            { where: { id: itemId }, transaction: t },
-          ),
-        );
+        itemUpdates.push({
+          id: itemId,
+          consumerDemand: totalQuantity,
+        });
+
         for (const variant of variants) {
           if (!variant || variant.size == null) continue;
-          updates.push(
-            this.pkgRepo.packageBrandItemsQtyModel.update(
-              { selectedCapacity: variant.quantity },
-              {
-                where: {
-                  item_id: itemId,
-                  variant_size: String(variant.size).trim().toUpperCase(),
-                },
-                transaction: t,
-              },
-            ),
-          );
+
+          variantUpdates.push({
+            item_id: itemId,
+            variant_size: String(variant.size).trim().toUpperCase(),
+            selectedCapacity: variant.quantity,
+          });
         }
       }
-      await Promise.all(updates);
 
+      // Update PackageBrandModel once
       if (!isSearch) {
         await this.pkgRepo.packageBrandModel.update(
           { selected: itemTotalQuantity > 0 },
@@ -932,23 +1046,70 @@ export class OrdersService {
         );
       }
 
+      // Perform bulk updates
+      if (itemUpdates.length > 0) {
+        await Promise.all(
+          itemUpdates.map((item) =>
+            this.pkgRepo.packageBrandItemsModel.update(
+              { consumerDemand: item.consumerDemand },
+              {
+                where: { id: item.id },
+                transaction: t,
+              },
+            ),
+          ),
+        );
+      }
+
+      if (variantUpdates.length > 0) {
+        await Promise.all(
+          variantUpdates.map((v) =>
+            this.pkgRepo.packageBrandItemsQtyModel.update(
+              { selectedCapacity: v.selectedCapacity },
+              {
+                where: {
+                  item_id: v.item_id,
+                  variant_size: v.variant_size,
+                },
+                transaction: t,
+              },
+            ),
+          ),
+        );
+      }
+
       await t.commit();
+
+      // socket to update qty on admin by consumer
+      if (packageOrderId) {
+        this.socketGateway.server.emit(`updateQty-${existingOrder?.store_id}-${packageOrderId}`);
+      }
+
       return { success: true, message: AllMessages.QUANT_UPDATED };
     } catch (err) {
       if (t) await t.rollback();
+      console.error('❌ updateVarientQuantity error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
-  async updateAccessVarientQuantity(body: any) {
+  /**
+   * @description Set Product Quantity for access list
+   */
+  async updateAccessVarientQuantity(body: DTO.UpdateAccessVariantQuantityDto) {
     try {
       const { items } = body;
+
       for (const item of items || []) {
         const { itemId, totalQuantity, variants } = item;
+
         await this.pkgRepo.packageBrandItemsModel.update({ consumerDemand: totalQuantity }, { where: { id: itemId } });
+
         for (const variant of variants || []) {
           const { size, quantity } = variant;
-          if (size == null) continue;
+
+          if (size === undefined || size === null) continue;
+
           await this.pkgRepo.packageBrandItemsQtyModel.update(
             { selectedCapacity: quantity },
             {
@@ -965,10 +1126,14 @@ export class OrdersService {
         message: 'All product and variant quantities updated successfully',
       };
     } catch (err) {
+      console.error('❌ updateVarientQuantity error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
+  /**
+   * @description seller can set prics as well as quantity of items
+   */
   async setItemPrice(user: getUser, body: DTO.SetItemPriceDto) {
     const t = await this.sequelize.transaction();
     try {
@@ -1089,148 +1254,31 @@ export class OrdersService {
     }
   }
 
-  async saveOrderAsDraft(user: any, body: any) {
-    const t = await (this.pkgRepo.packageOrderModel.sequelize as any).transaction();
+  /**
+   * @description Save Order as draft in access list
+   */
+  async saveOrderAsDraft(user: any, body: DTO.saveAsDraftDto) {
+    const t = await this.sequelize.transaction();
     try {
-      const { packageId, brands = [] } = body;
+      const { packageId, brandData = [] } = body;
       const { userId } = user;
 
-      const accessOrder = await this.pkgRepo.accessPackageOrderModel.findByPk(packageId, {
+      const draftOrder = await this.SaveDraftService.saveOrderAsDraftHelper({
+        accessPackageId: packageId,
+        userId,
+        brands: brandData,
         transaction: t,
       });
-      if (!accessOrder) throw new BadRequestException(AllMessages.PAKG_NF);
-
-      const store = await this.storeRepo.storeModel.findByPk(accessOrder.store_id, {
-        transaction: t,
-      });
-      if (!store) throw new BadRequestException('Store not found.');
-
-      const orderIdStr = await generateOrderId({
-        storeId: store.store_id,
-        prefix: store.store_code,
-        model: this.pkgRepo.packageOrderModel as any,
-        transaction: t,
-      });
-
-      const pkg = await this.pkgRepo.packageOrderModel.create(
-        {
-          packageName: accessOrder.packageName,
-          user_id: accessOrder.user_id,
-          order_id: orderIdStr,
-          store_id: accessOrder.store_id,
-          status: PACKAGE_STATUS.DRAFT,
-          paymentStatus: 'Pending',
-          shipmentStatus: false,
-        } as any,
-        { transaction: t },
-      );
-
-      await this.pkgRepo.packageCustomerModel.create({ package_id: pkg.id, customer_id: userId } as any, {
-        transaction: t,
-      });
-
-      const brandIds = brands.map((b: any) => b.brand_id).filter(Boolean);
-      const validBrands = await this.productRepo.brandModel.findAll({
-        where: { id: brandIds },
-        transaction: t,
-      });
-      const brandIdSet = new Set(validBrands.map((b) => b.id));
-
-      const brandPayload = brands
-        .filter((b: any) => brandIdSet.has(b.brand_id) && b.items?.length > 0)
-        .map((b: any) => ({ package_id: pkg.id, brand_id: b.brand_id }));
-
-      if (brandPayload.length > 0) {
-        const createdBrands = await this.pkgRepo.packageBrandModel.bulkCreate(brandPayload, {
-          transaction: t,
-          returning: true,
-        });
-        const brandIdToPkgBrandId = new Map(createdBrands.map((b) => [b.brand_id, b.id]));
-
-        const itemRecords: any[] = [];
-        const variantRecords: any[] = [];
-        const sizeQtyArr: any[] = [];
-
-        for (const brand of brands) {
-          if (!brandIdSet.has(brand.brand_id)) continue;
-          const packageBrandId = brandIdToPkgBrandId.get(brand.brand_id);
-
-          for (const item of brand.items || []) {
-            const { product_id, variants = [], mainVariants = [] } = item;
-            if (!product_id) continue;
-            const tempId = `${packageBrandId}-${product_id}-${Math.random()}`;
-
-            itemRecords.push({
-              tempId,
-              packageBrand_id: packageBrandId,
-              product_id,
-              quantity: null,
-            });
-            variantRecords.push(
-              ...variants
-                .filter((v: any) => v.variantId)
-                .map((v: any) => ({
-                  tempId,
-                  variant_id: v.variantId,
-                  maxCapacity: v.maxCapacity || null,
-                })),
-            );
-            sizeQtyArr.push(
-              ...mainVariants.map((x: any) => ({
-                tempId,
-                variant_size: x.size,
-                maxCapacity: x.quantity || null,
-              })),
-            );
-          }
-        }
-
-        const createdItems = await this.pkgRepo.packageBrandItemsModel.bulkCreate(
-          itemRecords.map((r) => ({
-            packageBrand_id: r.packageBrand_id,
-            product_id: r.product_id,
-            quantity: r.quantity,
-          })),
-          { transaction: t, returning: true },
-        );
-
-        const tempIdToItemId = new Map();
-        createdItems.forEach((item, idx) => {
-          tempIdToItemId.set(itemRecords[idx].tempId, item.id);
-        });
-
-        const finalVariantInsert = variantRecords
-          .map((v) => ({
-            item_id: tempIdToItemId.get(v.tempId),
-            variant_id: v.variant_id,
-            maxCapacity: v.maxCapacity,
-          }))
-          .filter((x) => !!x.item_id);
-
-        if (finalVariantInsert.length > 0)
-          await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(finalVariantInsert, {
-            transaction: t,
-          });
-
-        const finalSizeInsert = sizeQtyArr
-          .map((x) => ({
-            item_id: tempIdToItemId.get(x.tempId),
-            variant_size: x.variant_size,
-            maxCapacity: x.maxCapacity,
-          }))
-          .filter((x) => !!x.item_id);
-
-        if (finalSizeInsert.length > 0)
-          await this.pkgRepo.packageBrandItemsQtyModel.bulkCreate(finalSizeInsert, {
-            transaction: t,
-          });
-      }
 
       await t.commit();
+
       return {
         success: true,
         message: AllMessages.ODR_DRAFT_SAVED,
-        data: { package_id: pkg.id, order_id: pkg.order_id },
+        data: {
+          package_id: draftOrder.id,
+          order_id: draftOrder.order_id,
+        },
       };
     } catch (err) {
       if (t) await t.rollback();
@@ -1238,26 +1286,119 @@ export class OrdersService {
     }
   }
 
+  /**
+   * @description Mark package Review step-2 by consumer
+   */
   async createOrder(user: any, body: any) {
-    const t = await (this.pkgRepo.packageOrderModel.sequelize as any).transaction();
+    const t = await this.sequelize.transaction();
     try {
-      const { accessPackageId, emails = [], brands = [], date, customerDetail } = body;
+      const { packageOrderId, brandIds = [] } = body;
       const { userId } = user;
 
-      const packageOrder = await this.createManualOrderService.createManualOrderHelper({
-        accessPackageId,
-        userId,
-        emails,
-        brands,
-        date,
-        customerDetail,
+      const existingOrder = await this.pkgRepo.packageOrderModel.findByPk(packageOrderId, {
+        include: [
+          {
+            model: this.userRepo.userModel,
+            as: 'user',
+            attributes: ['email'],
+          },
+          {
+            model: this.pkgRepo.packageCustomerModel,
+            where: { package_id: packageOrderId },
+            as: 'customers',
+            attributes: ['customer_id'],
+            include: [
+              {
+                model: this.userRepo.userModel,
+                as: 'customer',
+                attributes: ['firstName', 'lastName', 'email'],
+              },
+            ],
+          },
+          {
+            model: this.storeRepo.storeModel,
+            as: 'store',
+            attributes: ['store_name', 'store_id', 'store_icon'],
+          },
+        ],
         transaction: t,
       });
 
+      if (!existingOrder) {
+        throw new BadRequestException({ success: false, message: 'Package Order not found.' });
+      }
+      if (existingOrder.status !== PACKAGE_STATUS.DRAFT) {
+        throw new BadRequestException({
+          success: false,
+          message: 'Unable to create package.',
+        });
+      }
+
+      await this.pkgRepo.packageOrderModel.update(
+        { status: PACKAGE_STATUS.CREATED },
+        { where: { id: packageOrderId }, transaction: t },
+      );
+
+      // await PackageBrandModel.update(
+      //     { selected: true },
+      //     {
+      //         where: {
+      //             package_id: packageOrderId,
+      //             id: { [Op.in]: brandIds },
+      //         },
+      //         transaction: t,
+      //     }
+      // );
+
+      const customerUser = existingOrder.customers?.[0]?.customer;
+
+      if (!customerUser) {
+        throw new BadRequestException({
+          success: false,
+          message: 'Customer info not found for this order.',
+        });
+      }
+
+      const consumerName = [customerUser.firstName || '', customerUser.lastName || ''].join(' ').trim();
+
+      const { html, subject } = this.mailService.getPopulatedTemplate(TemplatesSlug.OrderRequestSubmit, {
+        project: process.env.PROJECT_NAME,
+        orderNo: existingOrder.order_id,
+        consumerName,
+        link: `${process.env.FRONTEND_URL}onesync.test/consumer-orders/open/${existingOrder.id}`,
+        supportEmail: process.env.SUPPORT_EMAIL,
+        frontendURL: process.env.FRONTEND_URL,
+        storeLogo: existingOrder?.store?.store_icon,
+        oneSyncLogo: process.env.ONE_SYNC_LOGO,
+      });
+
       await t.commit();
-      return packageOrder;
+
+      // Socket to send item updates -----------------------
+      this.socketGateway.server.emit(`open-${existingOrder?.store_id}`);
+      this.socketGateway.server.emit(`statusChanged-${existingOrder?.store_id}`);
+      this.socketGateway.server.emit(`statusChanged-${userId}`);
+
+      // 📨 Send email in background
+      setImmediate(() => {
+        if (existingOrder?.user?.email) {
+          this.mailService
+            .sendMail(existingOrder.user.email, html, subject)
+            .catch((err) => console.error('❌ Email send failed:', err));
+        }
+      });
+
+      return {
+        success: true,
+        message: AllMessages.ODR_CRTD,
+        data: {
+          package_id: existingOrder.id,
+          order_id: existingOrder.order_id,
+        },
+      };
     } catch (err) {
       if (t) await t.rollback();
+      console.error('❌ createOrder error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
@@ -1493,7 +1634,6 @@ export class OrdersService {
         roleId,
         token,
         transaction,
-        this.shopifyService,
       );
 
       await transaction.commit();
@@ -1545,18 +1685,25 @@ export class OrdersService {
     }
   }
 
-  async updateOrderBrands(body: any) {
+  /**
+   * @description Update Order brand (selected : true)
+   */
+  async updateOrderBrands(body: DTO.UpdateOrderBrandsDto) {
     try {
       const { packageOrderId, brandIds = [] } = body;
+
       const packageOrder = await this.pkgRepo.packageOrderModel.findByPk(packageOrderId);
       if (!packageOrder) throw new BadRequestException(AllMessages.PAKG_NF);
 
+      //   Update brands
       await this.pkgRepo.packageBrandModel.update(
         { selected: true },
         { where: { package_id: packageOrderId, id: { [Op.in]: brandIds } } },
       );
+
       return { success: true, message: AllMessages.ORDR_UPDTD };
     } catch (err) {
+      console.error('❌ updateOrderBrands error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
@@ -1585,11 +1732,15 @@ export class OrdersService {
 
       return { success: true, data: orderItems };
     } catch (err) {
+      console.error('❌ getAllOrderItemsPrice error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
-  async itemTotalPrice(body: any) {
+  /**
+   * @description Send Total items and Price
+   */
+  async itemTotalPrice(body: DTO.ItemTotalPriceDto) {
     const transaction = await this.sequelize.transaction();
     try {
       const { orderId, brandIds = [] } = body;
@@ -1615,6 +1766,26 @@ export class OrdersService {
             model: this.pkgRepo.packageBrandItemsQtyModel,
             as: 'sizeQuantities',
             where: { selectedCapacity: { [Op.gt]: 0 } },
+            required: true,
+            attributes: ['variant_size', 'selectedCapacity'],
+          },
+          {
+            model: this.pkgRepo.packageBrandItemsCapacityModel,
+            as: 'capacities',
+            required: true,
+            attributes: ['id', 'variant_id', 'item_id', 'maxCapacity', 'selectedCapacity'],
+            include: [
+              {
+                model: this.productRepo.variantModel,
+                as: 'variant',
+                where: {
+                  status: 1,
+                  quantity: { [Op.gt]: 0 },
+                },
+                required: true,
+                attributes: ['id', 'option1Value', 'quantity', 'price', 'accountType', 'cost', 'payout'],
+              },
+            ],
           },
         ],
         transaction,
@@ -1625,6 +1796,7 @@ export class OrdersService {
       let disableReview = false;
       let hasPrice = false;
 
+      // when price is present in item table but sizeQty slected is 0
       for (const brandItem of brandsItemData) {
         if (
           !brandItem.sizeQuantities ||
@@ -1633,13 +1805,21 @@ export class OrdersService {
         ) {
           continue;
         }
+        if (
+          !brandItem.capacities ||
+          brandItem.capacities.length === 0 ||
+          brandItem?.capacities[0]?.variant?.option1Value != brandItem?.sizeQuantities[0]?.variant_size
+        ) {
+          continue;
+        }
         const rawPrice = brandItem?.price;
         const price = rawPrice === null ? 0 : Number(rawPrice);
 
         if (price > 0) {
-          hasPrice = true;
+          hasPrice = true; // ✅ mark that at least one priced item exists
         }
 
+        // Normalize consumerDemand into a number
         let qty = 0;
         const demand = brandItem?.consumerDemand;
         if (demand && typeof demand === 'object') {
@@ -1648,20 +1828,38 @@ export class OrdersService {
           qty = Number(demand) || 0;
         }
 
+        // If demand exists but price is null/0 → disable review and skip totals
         if (qty > 0 && price === 0) {
           disableReview = true;
           continue;
         }
 
+        // Only add valid priced items
         if (price > 0 && qty > 0) {
           totalPrice += price * qty;
           itemTotal += qty;
         }
       }
 
+      // set total price in order table
       order.total_amount = totalPrice;
       await order.save({ transaction });
 
+      // const [updated] = await PackagePaymentModel.update(
+      //     { total_amount: totalPrice },
+      //     { where: { package_id: orderId }, transaction: t }
+      // );
+      // if (updated === 0) {
+      //     await PackagePaymentModel.create(
+      //         {
+      //             package_id: orderId,
+      //             total_amount: totalPrice,
+      //         },
+      //         { transaction: t }
+      //     );
+      // }
+
+      // 🧩 Handle payments safely (update all or create one if none exist)
       const existingPayments = await this.pkgRepo.packagePaymentModel.count({
         where: { package_id: orderId },
         transaction,
@@ -1688,14 +1886,18 @@ export class OrdersService {
       };
     } catch (err) {
       await transaction.rollback();
+      console.error('❌ itemTotalPrice error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
-  async totalItemCount(orderId: number) {
+  /**
+   * @description Count of received items and total items
+   */
+  async totalItemCount(param: DTO.OrderIdParamDto) {
     try {
       const brands = await this.pkgRepo.packageBrandModel.findAll({
-        where: { package_id: orderId, selected: true },
+        where: { package_id: param.orderId, selected: true },
         attributes: ['id', 'brand_id'],
         include: [
           {
@@ -1714,13 +1916,15 @@ export class OrdersService {
         ],
       });
 
+      // flatten all items
       const allItems = brands.flatMap((brand) => brand.items || []);
 
+      // total demand
       const totalConsumerDemand = allItems.reduce((sum, item) => sum + (Number(item.consumerDemand) || 0), 0);
 
+      // received qty = only from items marked "Item Received" AND qty > 0
       const receivedQuantity = allItems.reduce((acc, item) => {
         if (item.isItemReceived === ORDER_ITEMS.ITM_RECEIVED) {
-          // Use Enum
           const qtySum = (item.sizeQuantities || []).reduce(
             (sum, sq) => sum + (sq.receivedQuantity > 0 ? sq.receivedQuantity : 0),
             0,
@@ -1730,6 +1934,7 @@ export class OrdersService {
         return acc;
       }, 0);
 
+      // prices only for items actually received
       const prices = allItems.reduce((acc, item) => {
         if (
           item.isItemReceived === ORDER_ITEMS.ITM_RECEIVED &&
@@ -1747,25 +1952,26 @@ export class OrdersService {
         prices,
       };
     } catch (err) {
+      console.error('❌ totalItemCount error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
 
   /**
-   * @description Get order count
-   * @param user
-   * @returns
+   * @description Order count for sidebar
    */
   async orderCount(user: getUser) {
     try {
       const { storeId, userId, isConsumer } = user;
 
+      // helper for counting
       const sum = (orders: any[], statuses: PACKAGE_STATUS[], manual: number | null = null) =>
         orders
           .filter((o) => statuses.includes(o.status) && (manual === null || Number(o.isManualOrder) === manual))
           .reduce((acc, o) => acc + Number(o.count), 0);
 
       if (isConsumer) {
+        // fetch package IDs linked to consumer
         const cOrders = await this.pkgRepo.packageCustomerModel.findAll({
           where: { customer_id: userId },
           attributes: ['package_id'],
@@ -1786,6 +1992,7 @@ export class OrdersService {
           };
         }
 
+        // fetch all orders for these packages
         const orders = await this.pkgRepo.packageOrderModel.findAll({
           where: { id: { [Op.in]: packageIds } },
           attributes: ['status', 'isManualOrder', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']],
@@ -1953,7 +2160,10 @@ export class OrdersService {
     }
   }
 
-  async getVariantCost(body: any) {
+  /**
+   * @description Get variant cost for order
+   */
+  async getVariantCost(body: DTO.GetVariantCostDto) {
     try {
       const { variantIds } = body;
 
@@ -1967,6 +2177,7 @@ export class OrdersService {
         data: variants,
       };
     } catch (err) {
+      console.error('❌ getVariantCost error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
@@ -2082,16 +2293,7 @@ export class OrdersService {
       await order.save({ transaction });
 
       // Mark inventory as sold
-      await this.MarkInventorySold.markSoldInventory(
-        orderId,
-        confirmDate,
-        storeId,
-        userId,
-        roleId,
-        token,
-        transaction,
-        this.shopifyService,
-      );
+      await this.MarkInventorySold.markSoldInventory(orderId, confirmDate, storeId, userId, roleId, token, transaction);
 
       await transaction.commit();
 
@@ -2113,7 +2315,7 @@ export class OrdersService {
     }
   }
 
-  async checkStock(body: any) {
+  async checkStock(body: DTO.CheckStockDto) {
     try {
       const { items = [] } = body;
 
@@ -2130,8 +2332,10 @@ export class OrdersService {
           throw new BadRequestException('Product id is required.');
         }
 
+        // ✅ Trim all incoming variant sizes
         const sizes = variants.map((v) => v.size.trim());
 
+        // ✅ Fetch DB variants (trim DB side using Sequelize.fn)
         const dbVariants = await this.productRepo.variantModel.findAll({
           where: {
             productId: productMainId,
@@ -2147,6 +2351,7 @@ export class OrdersService {
           raw: true,
         });
 
+        // ✅ Normalize & sum stock per trimmed size
         const stockMap = dbVariants.reduce((acc, v) => {
           const sizeKey = v.option1Value?.trim();
           if (sizeKey) {
@@ -2155,6 +2360,7 @@ export class OrdersService {
           return acc;
         }, {});
 
+        // ✅ Compare DB stock vs required qty
         for (const v of variants) {
           const sizeKey = v.size.trim();
           const availableQty = stockMap[sizeKey] || 0;
@@ -2171,6 +2377,8 @@ export class OrdersService {
         }
       }
 
+      console.log('🧾 Out of stock items:', outOfStock);
+
       if (outOfStock.length > 0) {
         return {
           success: false,
@@ -2185,7 +2393,364 @@ export class OrdersService {
         message: 'All variants are in stock.',
       };
     } catch (err) {
+      console.error('❌ checkStock error:', err);
       throw new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
-} // End Class
+
+  /**
+   * @description Sync stock for package order brands
+   */
+  async syncStock(body: DTO.SyncStockDto) {
+    const t = await this.sequelize.transaction();
+    try {
+      const { orderId, brandId, productId, sizes = [] } = body;
+
+      const trimmedSizes = sizes.map((s) => String(s).trim());
+
+      const variants = await this.productRepo.variantModel.findAll({
+        where: {
+          productId,
+          status: 1,
+          quantity: { [Op.gt]: 0 },
+          [Op.and]: [
+            this.sequelize.where(this.sequelize.fn('TRIM', this.sequelize.col('option1Value')), {
+              [Op.in]: trimmedSizes,
+            }),
+          ],
+        },
+        attributes: [
+          [this.sequelize.fn('TRIM', this.sequelize.col('option1Value')), 'size'],
+          [
+            this.sequelize.fn(
+              'JSON_ARRAYAGG',
+              this.sequelize.fn(
+                'JSON_OBJECT',
+                'id',
+                this.sequelize.col('id'),
+                'quantity',
+                this.sequelize.col('quantity'),
+              ),
+            ),
+            'variants',
+          ],
+        ],
+        group: ['size'],
+        raw: true,
+      });
+
+      const orderData = await this.pkgRepo.packageBrandModel.findOne({
+        where: { package_id: orderId, brand_id: brandId },
+        attributes: ['id'],
+        include: [
+          {
+            model: this.pkgRepo.packageBrandItemsModel,
+            as: 'items',
+            where: { product_id: productId },
+            attributes: ['id', 'consumerDemand'],
+            include: [
+              {
+                model: this.pkgRepo.packageBrandItemsCapacityModel,
+                as: 'capacities',
+                attributes: ['id', 'variant_id', 'maxCapacity', 'selectedCapacity'],
+              },
+              {
+                model: this.pkgRepo.packageBrandItemsQtyModel,
+                as: 'sizeQuantities',
+                where: {
+                  variant_size: { [Op.in]: trimmedSizes },
+                },
+                attributes: ['id', 'variant_size', 'selectedCapacity', 'maxCapacity'],
+              },
+            ],
+          },
+        ],
+      });
+
+      if (!orderData || !orderData.items || orderData.items.length === 0) {
+        throw new BadRequestException('Order item not found.');
+      }
+
+      const itemId = orderData.items[0].id;
+      const existingCapacities = orderData.items[0].capacities || [];
+      const existingSizeQuantities = orderData.items[0].sizeQuantities || [];
+
+      // Parse variants safely
+      const parsedVariants = variants.map((v: any) => {
+        let variantsArray = [];
+        if (v.variants) {
+          if (typeof v.variants === 'string') {
+            try {
+              variantsArray = JSON.parse(v.variants);
+            } catch (e) {
+              console.error('JSON parse error:', e);
+              variantsArray = [];
+            }
+          } else if (Array.isArray(v.variants)) {
+            variantsArray = v.variants;
+          }
+        }
+        return {
+          size: v.size,
+          variants: variantsArray,
+        };
+      });
+
+      // Flatten all variant data
+      const allVariantData = parsedVariants.flatMap((v) =>
+        v.variants.map((varItem: any) => ({
+          size: v.size,
+          id: varItem.id,
+          quantity: varItem.quantity,
+        })),
+      );
+
+      // Check which variants already exist
+      const existingVariantIds = existingCapacities.map((cap) => cap.variant_id);
+
+      const newVariants = allVariantData.filter((v) => !existingVariantIds.includes(v.id));
+
+      // add new variants to capacities
+      if (newVariants.length > 0) {
+        await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(
+          newVariants.map((variant) => ({
+            item_id: itemId,
+            variant_id: variant.id,
+            maxCapacity: variant.quantity,
+            selectedCapacity: null,
+          })),
+          { ignoreDuplicates: true, transaction: t },
+        );
+      }
+
+      // 2. Update maxCapacity in sizeQuantities based on total quantity per size
+      for (const variantGroup of parsedVariants) {
+        const size = variantGroup.size;
+        const totalQty = variantGroup.variants.reduce((acc, v: any) => acc + (v.quantity || 0), 0);
+
+        if (totalQty === 0) continue;
+
+        // Find if size quantity already exists
+        const existingSizeQty = existingSizeQuantities.find((sq) => sq.variant_size === size);
+
+        if (existingSizeQty) {
+          // Update existing size quantity
+          await this.pkgRepo.packageBrandItemsQtyModel.update(
+            {
+              maxCapacity: totalQty,
+            },
+            {
+              where: {
+                id: existingSizeQty.id,
+                item_id: itemId,
+              },
+              transaction: t,
+            },
+          );
+        }
+        // else {
+        //     // Create new size quantity if doesn't exist
+        //     await PackageBrandItemsQtyModel.create({
+        //         item_id: itemId,
+        //         variant_size: size,
+        //         maxCapacity: totalQty,
+        //         selectedCapacity: 0,
+        //         shortage: 0,
+        //         receivedQuantity: 0,
+        //     });
+        // }
+      }
+      await t.commit();
+
+      return {
+        success: true,
+        data: {
+          newVariantsAdded: newVariants.length,
+          sizesUpdated: parsedVariants.map((v) => v.size),
+          message: 'Stock synced successfully.',
+        },
+      };
+    } catch (err) {
+      await t.rollback();
+      console.error('❌ syncStock error:', err);
+      throw new BadRequestException(AllMessages.SMTHG_WRNG || 'Something went wrong.');
+    }
+  }
+
+  /**
+   * @description Sync full stock for package order brands
+   */
+  async syncFullStock(body: DTO.SyncFullStock) {
+    let transaction = await this.sequelize.transaction();
+    try {
+      const { orderId, brandIds = [] } = body;
+
+      let didSyncAnything = false;
+      const summary: {
+        brandId: number;
+        productId: number;
+        newVariantsAdded: number;
+        sizesUpdated: number;
+      }[] = [];
+
+      const orderBrands = await this.pkgRepo.packageBrandModel.findAll({
+        where: {
+          package_id: orderId,
+          brand_id: { [Op.in]: brandIds },
+          selected: true,
+        },
+        attributes: ['id', 'brand_id'],
+        include: [
+          {
+            model: this.pkgRepo.packageBrandItemsModel,
+            as: 'items',
+            where: { consumerDemand: { [Op.gt]: 0 } },
+            attributes: ['id', 'product_id'],
+            include: [
+              {
+                model: this.pkgRepo.packageBrandItemsCapacityModel,
+                as: 'capacities',
+                attributes: ['variant_id'],
+              },
+              {
+                model: this.pkgRepo.packageBrandItemsQtyModel,
+                as: 'sizeQuantities',
+                where: {
+                  selectedCapacity: { [Op.gt]: 0 },
+                  variant_size: { [Op.ne]: null },
+                },
+                required: false,
+                attributes: ['id', 'variant_size', 'selectedCapacity', 'maxCapacity'],
+              },
+            ],
+          },
+        ],
+        transaction,
+      });
+
+      for (const brand of orderBrands) {
+        for (const item of brand.items ?? []) {
+          let newVariantsAdded = 0;
+          let sizesUpdated = 0;
+
+          const sizes = (item.sizeQuantities || []).map((sq) => String(sq.variant_size).trim());
+
+          if (!sizes.length) continue;
+
+          const variants = await this.productRepo.variantModel.findAll({
+            where: {
+              productId: item.product_id,
+              status: 1,
+              quantity: { [Op.gt]: 0 },
+              [Op.and]: [
+                this.sequelize.where(this.sequelize.fn('TRIM', this.sequelize.col('option1Value')), { [Op.in]: sizes }),
+              ],
+            },
+            attributes: [
+              [this.sequelize.fn('TRIM', this.sequelize.col('option1Value')), 'size'],
+              [
+                this.sequelize.fn(
+                  'JSON_ARRAYAGG',
+                  this.sequelize.fn(
+                    'JSON_OBJECT',
+                    'id',
+                    this.sequelize.col('id'),
+                    'quantity',
+                    this.sequelize.col('quantity'),
+                  ),
+                ),
+                'variants',
+              ],
+            ],
+            group: ['size'],
+            raw: true,
+            transaction,
+          });
+
+          if (!variants.length) continue;
+
+          const parsedVariants = variants.map((v: any) => ({
+            size: v.size,
+            variants: typeof v.variants === 'string' ? JSON.parse(v.variants) : v.variants || [],
+          }));
+
+          const allVariantData = parsedVariants.flatMap((v) =>
+            v.variants.map((x) => ({
+              id: x.id,
+              quantity: x.quantity,
+              size: v.size,
+            })),
+          );
+
+          const existingVariantSet = new Set((item.capacities || []).map((c) => c.variant_id));
+
+          const newVariants = allVariantData.filter((v) => !existingVariantSet.has(v.id));
+
+          if (newVariants.length > 0) {
+            didSyncAnything = true;
+            newVariantsAdded = newVariants.length;
+
+            await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(
+              newVariants.map((v) => ({
+                item_id: item.id,
+                variant_id: v.id,
+                maxCapacity: v.quantity,
+                selectedCapacity: 0,
+              })),
+              { ignoreDuplicates: true, transaction },
+            );
+          }
+
+          for (const group of parsedVariants) {
+            const totalQty = group.variants.reduce((sum, v) => sum + (v.quantity || 0), 0);
+
+            if (!totalQty) continue;
+
+            const sizeQty = (item.sizeQuantities || []).find((sq) => String(sq.variant_size).trim() === group.size);
+
+            if (sizeQty) {
+              const newMax = Math.max(totalQty, sizeQty.selectedCapacity || 0);
+
+              if (newMax !== sizeQty.maxCapacity) {
+                didSyncAnything = true;
+                sizesUpdated++;
+
+                await this.pkgRepo.packageBrandItemsQtyModel.update(
+                  { maxCapacity: newMax },
+                  {
+                    where: { id: sizeQty.id },
+                    transaction,
+                  },
+                );
+              }
+            }
+          }
+
+          // 🔹 Push simple summary row
+          if (newVariantsAdded || sizesUpdated) {
+            summary.push({
+              brandId: brand.brand_id,
+              productId: item.product_id,
+              newVariantsAdded,
+              sizesUpdated,
+            });
+          }
+        }
+      }
+
+      await transaction.commit();
+
+      return {
+        success: true,
+        refetch: didSyncAnything,
+        summary,
+        message: didSyncAnything ? 'Package stock synced successfully.' : 'No stock changes detected.',
+      };
+    } catch (err) {
+      if (transaction) await transaction.rollback();
+      console.error('❌ syncFullStock error:', err);
+
+      throw new BadRequestException(AllMessages.SMTHG_WRNG || 'Something went wrong.');
+    }
+  }
+}

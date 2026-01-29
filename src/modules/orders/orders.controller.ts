@@ -113,44 +113,95 @@ export class OrdersController {
     return this.ordersService.storeConfirm(param, user, body);
   }
 
-  @Post('accessList')
-  accessList(@GetUser() user: getUser, @Body() body: any) {
-    return this.ordersService.accessList(user, body);
-  }
+  /**
+|--------------------------------------------------
+| # Common Routes
+|--------------------------------------------------
+*/
 
-  @Post('getAll')
-  allOrders(@GetUser() user: getUser, @Body() body: any) {
-    return this.ordersService.allOrders(user, body);
+  @Post('getVariantCost')
+  getVariantCost(@Body() body: DTO.GetVariantCostDto) {
+    return this.ordersService.getVariantCost(body);
   }
 
   @Get(':orderId/brands')
-  getPackageBrands(@GetUser() user: getUser, @Param() params: any, @Query() query: any) {
+  getPackageBrands(@GetUser() user: getUser, @Param() params: DTO.OrderIdParamDto, @Query() query: any) {
     return this.ordersService.getPackageBrands(user, params, query);
   }
 
   @Get(':orderId/brands/:brandId/products')
-  getPackageBrandProducts(@Param() params: any, @Query() query: any) {
+  getPackageBrandProducts(@Param() params: DTO.ParamOrderIdBrandIdDto, @Query() query: any) {
     return this.ordersService.getPackageBrandProducts(params, query);
   }
 
-  @Post('updateBrandQty')
-  updateBrandQty(@Body() body: any) {
-    return this.ordersService.updateVarientQuantity(body);
+  @Post('itemTotalPrice')
+  itemTotalPrice(@Body() body: DTO.ItemTotalPriceDto) {
+    return this.ordersService.itemTotalPrice(body);
+  }
+
+  @Post('totalItemCount/:orderId')
+  totalItemCount(@Param('orderId') param: DTO.OrderIdParamDto) {
+    return this.ordersService.totalItemCount(param);
+  }
+
+  @Get('orders-count')
+  orderCount(@GetUser() user: getUser) {
+    return this.ordersService.orderCount(user);
+  }
+
+  @Post('checkStock')
+  checkStock(@Body() body: DTO.CheckStockDto) {
+    return this.ordersService.checkStock(body);
+  }
+
+  @Post('/syncStock')
+  syncStock(@Body() body: DTO.SyncStockDto) {
+    return this.ordersService.syncStock;
+  }
+
+  @Post('syncFullStock')
+  syncFullStock(@Body() body: DTO.SyncFullStock) {
+    return this.ordersService.syncFullStock(body);
+  }
+
+  /**
+  |--------------------------------------------------
+  | # Consumer Routes
+  |--------------------------------------------------
+  */
+  @Post('accessList')
+  accessList(@GetUser() user: getUser, @Body() body: DTO.AccessListDto) {
+    return this.ordersService.accessList(user, body);
+  }
+
+  @Post('getAll')
+  allOrders(@GetUser() user: getUser, @Body() body: DTO.GetOrdersDto) {
+    return this.ordersService.allOrders(user, body);
   }
 
   @Post('updateAccessBrandQty')
-  updateAccessBrandQty(@Body() body: any) {
+  updateAccessBrandQty(@Body() body: DTO.UpdateAccessVariantQuantityDto) {
     return this.ordersService.updateAccessVarientQuantity(body);
   }
 
-  @Post('saveOrderAsDraft')
-  saveOrderAsDraft(@GetUser() user: getUser, @Body() body: any) {
+  @Post('updateBrandQty')
+  updateBrandQty(@Body() body: DTO.UpdateQuantityDto) {
+    return this.ordersService.updateVarientQuantity(body);
+  }
+
+  @Post('saveAsDraft')
+  saveOrderAsDraft(@GetUser() user: getUser, @Body() body: DTO.saveAsDraftDto) {
     return this.ordersService.saveOrderAsDraft(user, body);
   }
 
   @Post('createOrder')
-  createOrder(@GetUser() user: getUser, @Body() body: any) {
+  createOrder(@GetUser() user: getUser, @Body() body: DTO.CreateOrderDto) {
     return this.ordersService.createOrder(user, body);
+  }
+
+  @Post('updateOrderBrands')
+  updateOrderBrands(@Body() body: DTO.UpdateOrderBrandsDto) {
+    return this.ordersService.updateOrderBrands(body); // selected: true
   }
 
   @Post(':orderId/confirm')
@@ -161,35 +212,5 @@ export class OrdersController {
     @Headers('authorization') token: string,
   ) {
     return this.ordersService.confirmOrder(orderId, user, body, token);
-  }
-
-  @Post('updateOrderBrands')
-  updateOrderBrands(@Body() body: any) {
-    return this.ordersService.updateOrderBrands(body);
-  }
-
-  @Post('itemTotalPrice')
-  itemTotalPrice(@Body() body: any) {
-    return this.ordersService.itemTotalPrice(body);
-  }
-
-  @Post('totalItemCount/:orderId')
-  totalItemCount(@Param('orderId') orderId: number) {
-    return this.ordersService.totalItemCount(orderId);
-  }
-
-  @Get('orders-count')
-  orderCount(@GetUser() user: getUser) {
-    return this.ordersService.orderCount(user);
-  }
-
-  @Post('getVariantCost')
-  getVariantCost(@Body() body: any) {
-    return this.ordersService.getVariantCost(body);
-  }
-
-  @Post('checkStock')
-  checkStock(@Body() body: any) {
-    return this.ordersService.checkStock(body);
   }
 }

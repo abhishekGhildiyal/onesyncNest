@@ -26,29 +26,23 @@ export class SaveOrderAsDraftHelper {
   }: {
     accessPackageId: number;
     userId: number;
-    brands: any[]; // Define a stricter interface if possible
+    brands: any[];
     transaction: Transaction;
   }) => {
     try {
       // Fetch Access Package Order
-      const accessOrder = await this.pkgRepo.accessPackageOrderModel.findByPk(
-        accessPackageId,
-        {
-          transaction,
-        },
-      );
+      const accessOrder = await this.pkgRepo.accessPackageOrderModel.findByPk(accessPackageId, {
+        transaction,
+      });
       if (!accessOrder) {
         throw new BadRequestException(AllMessages.PAKG_NF);
       }
 
       // Fetch store for order_id prefix
-      const store = await this.storeRepo.storeModel.findByPk(
-        accessOrder.store_id,
-        {
-          attributes: ['store_code', 'store_name', 'store_id'],
-          transaction,
-        },
-      );
+      const store = await this.storeRepo.storeModel.findByPk(accessOrder.store_id, {
+        attributes: ['store_code', 'store_name', 'store_id'],
+        transaction,
+      });
 
       if (!store) {
         throw new BadRequestException('Store not found.');
@@ -76,10 +70,7 @@ export class SaveOrderAsDraftHelper {
       );
 
       // Add PackageCustomer linking user to the package
-      await this.pkgRepo.packageCustomerModel.create(
-        { package_id: pkg.id, customer_id: userId },
-        { transaction },
-      );
+      await this.pkgRepo.packageCustomerModel.create({ package_id: pkg.id, customer_id: userId }, { transaction });
 
       // Validate brands from frontend
       const brandIds = brands.map((b) => b.brand_id).filter(Boolean);
@@ -98,13 +89,10 @@ export class SaveOrderAsDraftHelper {
         }));
 
       // Create PackageBrands
-      const packageBrands = await this.pkgRepo.packageBrandModel.bulkCreate(
-        brandPayload,
-        {
-          transaction,
-          returning: true,
-        },
-      );
+      const packageBrands = await this.pkgRepo.packageBrandModel.bulkCreate(brandPayload, {
+        transaction,
+        returning: true,
+      });
 
       // Map brand_id to created packageBrand id
       const brandIdToPkgBrandId = new Map();
@@ -186,12 +174,9 @@ export class SaveOrderAsDraftHelper {
         }))
         .filter((x) => !!x.item_id);
 
-      await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(
-        finalVariantInsert,
-        {
-          transaction,
-        },
-      );
+      await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(finalVariantInsert, {
+        transaction,
+      });
 
       // Bulk insert variant sizes and quantities
       const finalSizeInsert = sizeQtyArr

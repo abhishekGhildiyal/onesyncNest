@@ -4,7 +4,7 @@ import { Op, Sequelize, Transaction } from 'sequelize';
 import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
-import { ShopifyService } from '../../modules/shopify/shopify.service';
+import { ShopifyServiceFactory } from '../../modules/shopify/shopify.service';
 import { ReducePackageQuantity } from './reduce-package-qty.helper';
 
 @Injectable()
@@ -15,6 +15,7 @@ export class MarkInventorySold {
     private readonly productRepo: ProductRepository,
 
     private readonly ReducePkgQtyHelper: ReducePackageQuantity,
+    private readonly shopifyFactory: ShopifyServiceFactory,
   ) {}
 
   markSoldInventory = async (
@@ -25,7 +26,6 @@ export class MarkInventorySold {
     roleId: string | number,
     token: string,
     transaction: Transaction,
-    shopifyService: ShopifyService,
   ) => {
     try {
       const store = await this.storeRepo.storeModel.findByPk(storeId, {
@@ -226,7 +226,13 @@ export class MarkInventorySold {
       if (allSoldInventoryIds.size > 0) {
         console.log(`🛍️ Preparing Shopify deletion for ${allSoldInventoryIds.size} sold inventory items...`);
 
-        const shopifyService = new ShopifyService(store);
+        const shopifyService = this.shopifyFactory.createService({
+          shopify_store: store.shopify_store,
+          shopify_token: store.shopify_token,
+          id: store.store_id,
+          store_domain: store.store_domain,
+          is_discount: store.is_discount,
+        });
 
         const inventoryItems = await this.productRepo.inventoryModel.findAll({
           where: { id: [...allSoldInventoryIds], storeId },
@@ -235,11 +241,11 @@ export class MarkInventorySold {
         });
 
         const validItems = inventoryItems.filter((i) => i.shopifyId);
-
         if (!validItems.length) {
           console.log('⚠️ No Shopify IDs found for deletion.');
           return;
         }
+
         const groupedByProduct = validItems.reduce((acc, item) => {
           if (!acc[item.productId]) acc[item.productId] = [];
           acc[item.productId].push(item.shopifyId);
@@ -251,7 +257,7 @@ export class MarkInventorySold {
             `🧹 Deleting Shopify products for productId=${productId} (${(shopifyIds as string[]).length} IDs)`,
           );
 
-          const deleteResults = await shopifyService.deleteItems(shopifyIds as string[], productId);
+          const deleteResults = await shopifyService.deleteItems(shopifyIds as string[], Number(productId));
 
           const allDeletedOrNotFound = deleteResults.every((r) => r.success || r.message === 'Not found');
 
@@ -263,36 +269,36 @@ export class MarkInventorySold {
 
           // ✅ Cleanup web-scope items when all variants are gone
           /**if (allDeletedOrNotFound) {
-                            console.log(`🌐 All variants gone — cleaning up web-scope for product ${productId}...`);
-                            const webItems = await InventoryModel.findAll({
-                                where: {
-                                    productId,
-                                    publishedScope: "web",
-                                    storeId,
-                                },
-                                attributes: ["id", "shopifyId"],
-                                transaction,
-                            });
+                console.log(`🌐 All variants gone — cleaning up web-scope for product ${productId}...`);
+                const webItems = await InventoryModel.findAll({
+                    where: {
+                        productId,
+                        publishedScope: "web",
+                        storeId,
+                    },
+                    attributes: ["id", "shopifyId"],
+                    transaction,
+                });
 
-                            if (webItems.length > 0) {
-                                const webIds = webItems.map((i) => i.id);
+                if (webItems.length > 0) {
+                    const webIds = webItems.map((i) => i.id);
 
-                                await InventoryModel.update({ status: 2, quantity: 0 }, { where: { id: webIds }, transaction });
+                    await InventoryModel.update({ status: 2, quantity: 0 }, { where: { id: webIds }, transaction });
 
-                                await Promise.all(
-                                    webItems.map(async (g) => {
-                                        try {
-                                            await shopifyService.client.delete({ path: `products/${g.shopifyId}` });
-                                            console.log(`🗑️ Deleted web-scope Shopify product ID: ${g.shopifyId}`);
-                                        } catch (err) {
-                                            console.error(`⚠️ Failed to delete web-scope product ${g.shopifyId}:`, err.message);
-                                        }
-                                    })
-                                );
-                            } else {
-                                console.log(`ℹ️ No web-scope items found for product ${productId}`);
+                    await Promise.all(
+                        webItems.map(async (g) => {
+                            try {
+                                await shopifyService.client.delete({ path: `products/${g.shopifyId}` });
+                                console.log(`🗑️ Deleted web-scope Shopify product ID: ${g.shopifyId}`);
+                            } catch (err) {
+                                console.error(`⚠️ Failed to delete web-scope product ${g.shopifyId}:`, err.message);
                             }
-                        } */
+                        })
+                    );
+                } else {
+                    console.log(`ℹ️ No web-scope items found for product ${productId}`);
+                }
+            } */
 
           // desync Web items
           // ✅ desync Web items

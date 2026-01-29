@@ -8,6 +8,7 @@ import { TemplatesSlug } from '../../modules/mail/mail.constants';
 import { MailService } from '../../modules/mail/mail.service';
 import { PACKAGE_STATUS, PAYMENT_STATUS } from '../constants/enum';
 import { AllMessages } from '../constants/messages';
+import { ROLES } from '../constants/permissions';
 import { generateAlphaNumericPassword, hashPasswordMD5 } from './hash.helper';
 import { generateOrderId } from './order-generator.helper';
 
@@ -77,7 +78,7 @@ export class ManualOrderHelperService {
         statusChangeDate: date,
         employee_id: userId,
       },
-      { transaction: t },
+      { transaction: t, lock: t.LOCK.UPDATE },
     );
 
     const lowerEmails = emails.map((email) => email.toLowerCase());
@@ -169,8 +170,8 @@ export class ManualOrderHelperService {
     }
 
     const [consumerRole] = await this.userRepo.roleModel.findOrCreate({
-      where: { roleName: 'Consumer' },
-      defaults: { roleName: 'Consumer', status: true } as any,
+      where: { roleName: ROLES.CONSUMER },
+      defaults: { roleName: ROLES.CONSUMER, status: true } as any,
       transaction: t,
     });
 
@@ -185,7 +186,7 @@ export class ManualOrderHelperService {
         userId: user.id,
         roleId: consumerRole.roleId,
         storeId: accessOrder.store_id,
-        status: true,
+        status: 1,
       });
 
       packageCustomerEntries.push({
@@ -384,7 +385,7 @@ export class ManualOrderHelperService {
       })
       .filter(Boolean);
 
-    // Only new users for now based on legacy logic filter
+    // Only new users
     const newUserMailPayloads = mailPayloads.filter((m) => m && m.isNew);
 
     // Send mails asynchronously without awaiting to avoid blocking response

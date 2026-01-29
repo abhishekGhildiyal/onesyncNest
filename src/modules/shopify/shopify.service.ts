@@ -1,5 +1,5 @@
 // shopify.service.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { DataType } from '@shopify/shopify-api';
 import { shopify } from './shopify.config';
 
@@ -11,7 +11,7 @@ interface StoreConfig {
   is_discount?: boolean;
 }
 
-interface DeleteResult {
+export interface DeleteResult {
   id: string;
   success: boolean;
   message?: string;
@@ -19,12 +19,15 @@ interface DeleteResult {
   status?: number;
 }
 
-@Injectable()
 export class ShopifyServiceFactory {
   private readonly logger = new Logger(ShopifyServiceFactory.name);
   private serviceCache = new Map<string, ShopifyService>();
 
   createService(store: StoreConfig): ShopifyService {
+    if (!store?.shopify_store || !store?.shopify_token) {
+      throw new Error('Invalid store object: missing shopify_store or shopify_token');
+    }
+
     const cacheKey = `${store.shopify_store}:${store.shopify_token}`;
 
     if (this.serviceCache.has(cacheKey)) {
@@ -33,6 +36,9 @@ export class ShopifyServiceFactory {
 
     const service = new ShopifyService(store);
     this.serviceCache.set(cacheKey, service);
+
+    this.logger.log(`🛒 Shopify service created for ${store.shopify_store}`);
+
     return service;
   }
 }
@@ -44,7 +50,7 @@ export class ShopifyService {
   private session: any;
 
   constructor(store: StoreConfig) {
-    if (!store?.shopify_store || !store?.shopify_token) {
+    if (!store.shopify_store || !store.shopify_token) {
       throw new Error('Invalid store object: missing shopifyStore or shopifyToken');
     }
 

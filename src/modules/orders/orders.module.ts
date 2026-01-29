@@ -1,7 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ManualOrderHelperService } from 'src/common/helpers/create-manual-order.helper';
-import { ReducePackageQuantity } from 'src/common/helpers/reduce-package-qty.helper';
-import { MarkInventorySold } from 'src/common/helpers/sold-inventory.helper';
+import { HelpersModule } from 'src/common/helpers/helpers.module';
 import { DatabaseModule } from 'src/db/database.module';
 import { ShopifyModule } from '../shopify/shopify.module';
 import { SocketModule } from '../socket/socket.module';
@@ -9,13 +7,8 @@ import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
 @Module({
-  imports: [ShopifyModule, DatabaseModule, SocketModule],
-  providers: [
-    OrdersService,
-    ManualOrderHelperService,
-    MarkInventorySold,
-    ReducePackageQuantity,
-  ],
+  imports: [ShopifyModule, DatabaseModule, SocketModule, HelpersModule],
+  providers: [OrdersService],
   controllers: [OrdersController],
   exports: [OrdersService],
 })
