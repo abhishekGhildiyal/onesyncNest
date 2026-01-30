@@ -3,7 +3,7 @@ import { AutoIncrement, Column, DataType, Model, PrimaryKey, Table } from 'seque
 @Table({
   timestamps: true,
 })
-export class ConsumerInventory extends Model {
+export class CustomerInventory extends Model {
   @PrimaryKey
   @AutoIncrement
   @Column({

@@ -12,34 +12,29 @@ import { InventoryService } from './inventory.service';
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
+  @Post('hyperAdd')
+  hyperAddinventory(@Body() body: DTO.HyperAddInventoryDto) {
+    return this.inventoryService.hyperAddinventory(body);
+  }
+
+  // Consumer inventory
   @Post('getAll')
-  getAllInventory(
-    @GetUser() user: getUser,
-    @Body() body: DTO.GetAllInventoryDto,
-  ) {
+  getAllInventory(@GetUser() user: getUser, @Body() body: DTO.GetAllInventoryDto) {
     return this.inventoryService.getAllInventory(user, body);
   }
 
   @Post('products')
-  consumerProducts(
-    @GetUser() user: getUser,
-    @Body() body: DTO.ConsumerProductsDto,
-  ) {
+  consumerProducts(@GetUser() user: getUser, @Body() body: DTO.ConsumerProductsDto) {
     return this.inventoryService.consumerProducts(user, body);
   }
 
   @Post('detail')
-  productVariants(@Body() body: DTO.ProductVariantsDto) {
+  productVariants(@GetUser() user: getUser, @Body() body: DTO.ProductVariantsDto) {
     return this.inventoryService.productVariants(body);
   }
 
   @Get('inventoryBrands')
   inventoryBrands(@GetUser() user: getUser) {
     return this.inventoryService.inventoryBrands(user);
-  }
-
-  @Post('hyperAdd')
-  hyperAddinventory(@Body() body: any) {
-    return this.inventoryService.hyperAddinventory(body);
   }
 }

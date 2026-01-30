@@ -2,7 +2,7 @@ import { Audit } from './audit/audit';
 import { Authenticate } from './auth/authenticateSchema';
 import { UserLoginToken } from './auth/userLoginToken';
 import { CallLog } from './call/callLog';
-import { ConsumerInventory } from './consumer/consumerInventory';
+import { CustomerInventory } from './consumer/consumerInventory';
 import { ConsumerProductList } from './consumer/consumerProducts';
 import { ConsumerProductsMapping } from './consumer/consumerProductsMapping';
 import { ConsumerProductVariants } from './consumer/consumerProductVariants';
@@ -57,7 +57,7 @@ export const ENTITIES = [
   UserLoginToken,
   CallLog,
   Customers,
-  ConsumerInventory,
+  CustomerInventory,
   ConsumerProductList,
   ConsumerProductsMapping,
   ConsumerProductVariants,
@@ -116,11 +116,11 @@ export {
   Authenticate,
   Brands,
   CallLog,
-  ConsumerInventory,
   ConsumerProductList,
   ConsumerProductsMapping,
   ConsumerProductVariants,
   ConsumerShippingAddress,
+  CustomerInventory,
   Customers,
   Inventory,
   InventoryRequest,

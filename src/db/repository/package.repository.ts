@@ -7,11 +7,11 @@ import {
   AccessPackageBrandItemsQty,
   AccessPackageCustomer,
   AccessPackageOrder,
-  ConsumerInventory,
   ConsumerProductList,
   ConsumerProductsMapping,
   ConsumerProductVariants,
   ConsumerShippingAddress,
+  CustomerInventory,
   Invoice,
   PackageBrand,
   PackageBrandItems,
@@ -56,8 +56,8 @@ export class PackageRepository {
     @InjectModel(PackageShipment)
     public readonly packageShipmentModel: typeof PackageShipment,
 
-    @InjectModel(ConsumerInventory)
-    public readonly consumerInventoryModel: typeof ConsumerInventory,
+    @InjectModel(CustomerInventory)
+    public readonly consumerInventoryModel: typeof CustomerInventory,
     @InjectModel(ConsumerProductList)
     public readonly consumerProductModel: typeof ConsumerProductList,
     @InjectModel(ConsumerProductVariants)
