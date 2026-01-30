@@ -1,28 +1,18 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
-
-import { ApiTags } from '@nestjs/swagger';
 import type { getUser } from 'src/common/interfaces/common/getUser';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
-import {
-  AddAddressDto,
-  CreateLabelTemplateDto,
-  CreateSenderDto,
-  EmailAndKeyDto,
-  SaveLabelTemplateDto,
-  UpdateLabelTemplateDto,
-} from './dto/store.dto';
+import * as DTO from './dto/store.dto';
 import { StoreService } from './store.service';
 
-@ApiTags('Store')
 @Controller('store')
 @UseGuards(AuthGuard, PermissionGuard)
 export class StoreController {
   constructor(private readonly storeService: StoreService) {}
 
   @Post('address')
-  addAddress(@GetUser() user: getUser, @Body() body: AddAddressDto) {
+  addAddress(@GetUser() user: getUser, @Body() body: DTO.AddAddressDto) {
     return this.storeService.addAddress(user, body);
   }
 
@@ -31,59 +21,64 @@ export class StoreController {
     return this.storeService.getAddress(user);
   }
 
-  @Post('sender')
-  createSender(@GetUser() user: getUser, @Body() body: CreateSenderDto) {
-    return this.storeService.createSender(user, body);
-  }
+  //   @Post('create-sender')
+  //   createSender(@GetUser() user: getUser, @Body() body: DTO.CreateSenderDto) {
+  //     return this.storeService.createSender(user, body);
+  //   }
 
-  @Get('sender/verify/:id')
-  verifySender(@GetUser() user: getUser, @Param('id') id: string) {
-    return this.storeService.verifySender(user, id);
-  }
+  //   @Get('verify-sender/:senderId')
+  //   verifySender(@GetUser() user: getUser, @Param('id') id: string) {
+  //     return this.storeService.verifySender(user, id);
+  //   }
 
-  @Post('sender/resend/:id')
-  resendVerification(@Param('id') id: string) {
-    return this.storeService.resendVerification(id);
-  }
+  //   @Post('resendMail/:senderId')
+  //   resendVerification(@Param('id') id: string) {
+  //     return this.storeService.resendVerification(id);
+  //   }
 
-  @Post('email-key')
-  storeEmailAndKey(@GetUser() user: getUser, @Body() body: EmailAndKeyDto) {
+  @Post('sendgrid-key')
+  storeEmailAndKey(@GetUser() user: getUser, @Body() body: DTO.EmailAndKeyDto) {
     return this.storeService.storeEmailAndKey(user, body);
   }
 
-  @Get('email-key')
+  @Get('sendgrid-key')
   getEmailAndKey(@GetUser() user: getUser) {
     return this.storeService.getEmailAndKey(user);
   }
 
-  @Post('label-template')
-  saveLabelTemplate(@GetUser() user: getUser, @Body() body: SaveLabelTemplateDto) {
+  @Post('saveLabelTemplate')
+  saveLabelTemplate(@GetUser() user: getUser, @Body() body: DTO.SaveLabelTemplateDto) {
     return this.storeService.saveLabelTemplate(user, body);
   }
 
-  @Get('label-template/:type')
-  getLabelTemplate(@GetUser() user: getUser, @Param('type') type: string) {
-    return this.storeService.getLabelTemplate(user, type);
-  }
-
-  @Get('label-templates/both')
+  @Get('getBothLabelTemplate')
   getBothLabelTemplate(@GetUser() user: getUser) {
     return this.storeService.getBothLabelTemplate(user);
   }
 
+  /**
+   |--------------------------------------------------
+   | New flow for labels multiple templates
+   |--------------------------------------------------
+   */
   @Post('createLabelTemplate')
-  createLabelTemplate(@GetUser() user: getUser, @Body() body: CreateLabelTemplateDto) {
+  createLabelTemplate(@GetUser() user: getUser, @Body() body: DTO.CreateLabelTemplateDto) {
     return this.storeService.createLabelTemplate(user, body);
   }
 
   @Post('updateLabelTemplate')
-  updateLabelTemplate(@GetUser() user: getUser, @Body() body: UpdateLabelTemplateDto) {
+  updateLabelTemplate(@GetUser() user: getUser, @Body() body: DTO.UpdateLabelTemplateDto) {
     return this.storeService.updateLabelTemplate(user, body);
   }
 
+  @Get('getAllLabelTemplates')
+  getAllLabelTemplates(@GetUser() user: getUser, @Query() query: DTO.GetAllLabelTemplatesQueryDto) {
+    return this.storeService.getAllLabelTemplates(user, query);
+  }
+
   @Get('getlabelTemplate/:type')
-  getAllLabelTemplates(@GetUser() user: getUser, @Param('type') type: string) {
-    return this.storeService.getAllLabelTemplates(user, type);
+  getLabelTemplate(@GetUser() user: getUser, @Param('type') type: string) {
+    return this.storeService.getLabelTemplate(user, type);
   }
 
   @Get('getTemplate/:id')
@@ -91,7 +86,7 @@ export class StoreController {
     return this.storeService.getLabelTemplateById(user, id);
   }
 
-  @Delete('deleteTemplate/:id')
+  @Get('deleteTemplate/:id')
   deleteLabelTemplate(@Param('id') id: number) {
     return this.storeService.deleteLabelTemplate(id);
   }

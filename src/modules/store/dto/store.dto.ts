@@ -1,4 +1,6 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsArray, IsEmail } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsEmail, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class StoreAddressDto {
   @IsString()
@@ -101,32 +103,50 @@ export class SaveLabelTemplateDto {
 }
 
 export class CreateLabelTemplateDto {
+  @IsNotEmpty()
   @IsString()
   name: string;
 
+  @IsNotEmpty()
   @IsString()
   templateData: string;
 
-  @IsString()
-  label: string;
+  @IsNotEmpty()
+  @IsNotEmpty()
+  label: Object;
 
+  @IsNotEmpty()
   @IsString()
   type: string;
 }
 
-export class UpdateLabelTemplateDto {
-  @IsNumber()
+export class UpdateLabelTemplateDto extends CreateLabelTemplateDto {
+  @IsNotEmpty()
+  @Type(() => Number)
   id: number;
+}
 
+// For getAllLabelTemplates query parameters
+export class GetAllLabelTemplatesQueryDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsString()
-  name: string;
+  search?: string;
 
-  @IsString()
-  templateData: string;
+  @ApiProperty({ required: false, default: 1 })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  page?: number = 1;
 
-  @IsString()
-  label: string;
+  @ApiProperty({ required: false, default: 10 })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  limit?: number = 10;
 
+  @ApiProperty({ required: false, enum: ['product', 'inventory'] })
+  @IsOptional()
   @IsString()
-  type: string;
+  type?: string;
 }

@@ -5,6 +5,7 @@ import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
 import { AllMessages } from '../../common/constants/messages';
+import * as DTO from './dto/store.dto';
 
 @Injectable()
 export class StoreService {
@@ -18,19 +19,26 @@ export class StoreService {
     }
   }
 
-  async addAddress(user: any, body: any) {
-    if (!this.storeRepo.storeModel.sequelize)
+  /**
+   * @description Add store and its shipping orders
+   */
+  async addAddress(user: any, body: DTO.AddAddressDto) {
+    if (!this.storeRepo.storeModel.sequelize) {
       throw new BadRequestException({
         message: 'Sequelize not initialized',
         success: false,
       });
+    }
+
     const transaction = await this.storeRepo.storeModel.sequelize.transaction();
     try {
       const { storeId } = user;
       const { storeAddress, shippingAddress = [] } = body;
 
+      // ✅ Update store default location
       if (storeAddress) {
         const { s_country, s_address, s_address2, s_city, s_state, s_zip } = storeAddress;
+
         await this.storeRepo.storeLocationMappingModel.update(
           {
             country: s_country,
@@ -40,20 +48,15 @@ export class StoreService {
             province: s_state,
             zip: s_zip,
           },
-          {
-            where: { store_id: storeId, default_store_location: true },
-            transaction,
-          },
+          { where: { store_id: storeId, default_store_location: true }, transaction },
         );
       }
 
+      // ✅ Handle shipping addresses
       if (shippingAddress.length > 0) {
-        await this.storeRepo.storeAddressModel.destroy({
-          where: { storeId },
-          transaction,
-        });
+        await this.storeRepo.storeAddressModel.destroy({ where: { storeId }, transaction });
 
-        const newAddresses = shippingAddress.map((addr: any) => ({
+        const newAddresses = shippingAddress.map((addr: DTO.ShippingAddressItemDto) => ({
           storeId,
           label: addr.label || 'Address',
           country: addr.country,
@@ -67,47 +70,61 @@ export class StoreService {
           selected: addr.selected ?? false,
         }));
 
-        await this.storeRepo.storeAddressModel.bulkCreate(newAddresses, {
-          transaction,
-        });
+        // ✅ Bulk insert all new addresses
+        await this.storeRepo.storeAddressModel.bulkCreate(newAddresses, { transaction });
       }
 
       await transaction.commit();
-      return { success: true, message: 'Address(es) saved successfully' };
+
+      return {
+        success: true,
+        message: 'Address(es) saved successfully',
+      };
     } catch (err) {
       await transaction.rollback();
+      console.error('❌ addAddress error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
+  /**
+   * @description Get store and its shipping orders
+   */
   async getAddress(user: any) {
     try {
       const { storeId } = user;
+
       const storeAddress = await this.storeRepo.storeLocationMappingModel.findOne({
         where: { store_id: storeId, default_store_location: true },
         raw: true,
       });
+
       const shippingAddress = await this.storeRepo.storeAddressModel.findAll({
         where: { storeId },
         raw: true,
       });
+
       return {
         success: true,
         data: { storeAddress, shippingAddress },
         message: AllMessages.ADDR_FTCH,
       };
     } catch (err) {
+      console.error('❌ getAddress error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
-  async createSender(user: any, body: any) {
+  /**
+   * @description Create sender in SendGrid
+   */
+  async createSender(user: any, body: DTO.CreateSenderDto) {
     try {
       const { email, name, address, city, state, zip, country } = body;
       const { storeId } = user;
@@ -117,8 +134,8 @@ export class StoreService {
         attributes: ['address1', 'city', 'country', 'province_code', 'zip'],
       });
 
-      const request: any = {
-        method: 'POST',
+      const request = {
+        method: 'POST' as const,
         url: '/v3/verified_senders',
         body: {
           nickname: name || 'Store Sender',
@@ -134,8 +151,10 @@ export class StoreService {
         },
       };
 
-      const [response, responseBody]: any = await sgClient.request(request);
-      // Legay used StoreSenderEmailModel which is missing. Porting as is but commenting out DB part if model missing.
+      const [response, responseBody] = await sgClient.request(request);
+      console.log('response', response, 'bodyy-----', responseBody);
+
+      // StoreSenderEmailModel is commented out as it's missing in repositories
       // await StoreSenderEmailModel.create({ tempSenderId: responseBody.id, senderEmail: email, storeId });
 
       return {
@@ -144,27 +163,36 @@ export class StoreService {
         senderId: responseBody.id,
       };
     } catch (err) {
+      console.error('❌ createSender error:', err.response?.body || err.message);
       throw new BadRequestException({
-        message: err.response?.body?.errors?.[0]?.message || AllMessages.SMTHG_WRNG,
         success: false,
+        message: err.response?.body?.errors?.[0]?.message || AllMessages.SMTHG_WRNG,
       });
     }
   }
 
+  /**
+   * @description Check if sender is verified
+   */
   async verifySender(user: any, senderId: string) {
     try {
       const { storeId } = user;
-      const request: any = {
-        method: 'GET',
+
+      const request = {
+        method: 'GET' as const,
         url: '/v3/verified_senders',
       };
-      const [response, body]: any = await sgClient.request(request);
-      const sender = body?.results?.find((s: any) => String(s.id) === String(senderId));
+
+      const [response, body] = await sgClient.request(request);
+      // console.log("body", body);
+
+      // Find sender by ID
+      const sender = body?.results?.find((s) => String(s.id) === String(senderId));
 
       if (!sender) {
         throw new BadRequestException({
-          message: 'Sender not found in SendGrid.',
           success: false,
+          message: 'Sender not found in SendGrid.',
         });
       }
 
@@ -177,7 +205,7 @@ export class StoreService {
         };
       }
 
-      // Mark verified in DB - model missing in legacy?
+      // Mark verified in DB - model missing
       // await StoreSenderEmailModel.update({ senderEmailVerified: true }, { where: { storeId, tempSenderId: senderId } });
 
       return {
@@ -186,51 +214,76 @@ export class StoreService {
         data: sender,
       };
     } catch (err) {
+      console.error('❌ verifySender error:', err.response?.body || err.message);
       throw new BadRequestException({
-        message: err.response?.body?.errors?.[0]?.message || err.message,
         success: false,
+        message: err.response?.body?.errors?.[0]?.message || err.message,
       });
     }
   }
 
+  /**
+   * @description Resend verification mail
+   */
   async resendVerification(senderId: string) {
     try {
-      const request: any = {
-        method: 'POST',
+      console.log('senderID', senderId);
+
+      const request = {
+        method: 'POST' as const,
         url: '/v3/verified_senders/resend_verification',
         body: { sender_id: Number(senderId) },
       };
-      const [response, body]: any = await sgClient.request(request);
+
+      const [response, body] = await sgClient.request(request);
+
+      console.log('body', body);
+
       return {
         success: true,
         message: 'Verification email resent successfully.',
         data: body,
       };
     } catch (err) {
+      console.error('❌ resendVerification error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
-  async storeEmailAndKey(user: any, body: any) {
+  /**
+  |--------------------------------------------------
+  | @description Store sendgrid api key and from email
+  |--------------------------------------------------
+  */
+  async storeEmailAndKey(user: any, body: DTO.EmailAndKeyDto) {
     try {
       const { storeId } = user;
       const { apiKey, senderEmail } = body;
+
       await this.storeRepo.storeModel.update(
         { sendgridApiKey: apiKey, sendgridFromEmail: senderEmail },
         { where: { store_id: storeId } },
       );
-      return { success: true, message: AllMessages.SENDGRID_API };
+
+      return {
+        success: true,
+        message: AllMessages.SENDGRID_API,
+      };
     } catch (err) {
+      console.error('❌ storeEmailAndKey error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
+  /**
+   * @description Get sendgrid api key and mail
+   */
   async getEmailAndKey(user: any) {
     try {
       const { storeId } = user;
@@ -238,99 +291,144 @@ export class StoreService {
         where: { store_id: storeId },
         attributes: ['sendgridApiKey', 'sendgridFromEmail'],
       });
-      if (!store)
+
+      if (!store) {
         throw new BadRequestException({
-          message: 'Store not found.',
           success: false,
+          message: 'Store not found.',
         });
-      return { success: true, data: store };
+      }
+
+      return {
+        success: true,
+        data: store,
+      };
     } catch (err) {
+      console.error('❌ getEmailAndKey error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
-  async saveLabelTemplate(user: any, body: any) {
+  /**
+   * @description Save label template
+   */
+  async saveLabelTemplate(user: any, body: DTO.SaveLabelTemplateDto) {
     try {
       const { storeId } = user;
       const { templateData, label, type } = body;
+
       const store = await this.storeRepo.storeModel.findByPk(storeId);
       if (store) {
-        const anyStore = store as any;
+        const storeData: any = store;
         if (type === 'product') {
-          anyStore.productLabel = label;
-          anyStore.productTemplate = templateData;
+          storeData.productLabel = label;
+          storeData.productTemplate = templateData;
         } else if (type === 'inventory') {
-          anyStore.inventoryLabel = label;
-          anyStore.inventoryTemplate = templateData;
+          storeData.inventoryLabel = label;
+          storeData.inventoryTemplate = templateData;
         }
         await store.save();
       }
-      return { success: true, message: AllMessages.LBL_SVD };
+
+      return {
+        success: true,
+        message: AllMessages.LBL_SVD,
+      };
     } catch (err) {
+      console.error('❌ saveLabelTemplate error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
+  /**
+   * @description Get label template
+   */
   async getLabelTemplate(user: any, type: string) {
     try {
       const labels = await this.productRepo.labelModel.findAll({
         where: { store_id: user.storeId, template_type: type },
       });
-      return { success: true, data: labels };
-    } catch (err) {
-      throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
-        success: false,
-      });
-    }
-  }
 
-  async getBothLabelTemplate(user: any) {
-    try {
-      const store = await this.storeRepo.storeModel.findByPk(user.storeId);
-      if (!store)
-        throw new BadRequestException({
-          message: 'Store not found.',
-          success: false,
-        });
-      const anyStore = store as any;
+      if (!labels) {
+        return {
+          success: true,
+          data: [],
+        };
+      }
+
       return {
         success: true,
-        data: {
-          productLabel: anyStore.productLabel,
-          productTemplate: anyStore.productTemplate,
-          inventoryLabel: anyStore.inventoryLabel,
-          inventoryTemplate: anyStore.inventoryTemplate,
-        },
+        data: labels,
       };
     } catch (err) {
+      console.error('❌ getLabeltemplate error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
-  async createLabelTemplate(user: any, body: any) {
+  /**
+   * @description Get both label templates (product and inventory)
+   */
+  async getBothLabelTemplate(user: any) {
+    try {
+      const { storeId } = user;
+
+      const store = await this.storeRepo.storeModel.findByPk(storeId);
+      if (!store) {
+        throw new BadRequestException({
+          success: false,
+          message: 'Store not found.',
+        });
+      }
+
+      const storeData: any = store;
+      const labelData = {
+        productLabel: storeData.productLabel,
+        productTemplate: storeData.productTemplate,
+        inventoryLabel: storeData.inventoryLabel,
+        inventoryTemplate: storeData.inventoryTemplate,
+      };
+
+      return {
+        success: true,
+        data: labelData,
+      };
+    } catch (err) {
+      console.error('❌ getLabeltemplate error:', err);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
+    }
+  }
+
+  /**
+   * @description Create new template
+   */
+  async createLabelTemplate(user: any, body: DTO.CreateLabelTemplateDto) {
     try {
       const { storeId } = user;
       const { name, templateData, label, type } = body;
 
-      const existing = await this.productRepo.labelModel.findOne({
+      const existingLabel = await this.productRepo.labelModel.findOne({
         where: { store_id: storeId, label_name: name },
       });
 
-      if (existing)
+      if (existingLabel) {
         throw new BadRequestException({
-          message: AllMessages.LBL_EXST,
           success: false,
+          message: AllMessages.LBL_EXST,
         });
+      }
 
       await this.productRepo.labelModel.create({
         store_id: storeId,
@@ -340,51 +438,79 @@ export class StoreService {
         template_type: type,
       });
 
-      return { success: true, message: AllMessages.LBL_SVD };
+      return {
+        success: true,
+        message: AllMessages.LBL_SVD,
+      };
     } catch (err) {
       console.error('❌ createLabelTemplate error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
-  async updateLabelTemplate(user: any, body: any) {
+  /**
+   * @description Update label template
+   */
+  async updateLabelTemplate(user: any, body: DTO.UpdateLabelTemplateDto) {
     try {
       const { storeId } = user;
       const { id, name, templateData, label, type } = body;
+
       const dbLabel = await this.productRepo.labelModel.findOne({
         where: { store_id: storeId, id },
       });
-      if (!dbLabel)
+
+      if (!dbLabel) {
         throw new BadRequestException({
-          message: 'Label not found.',
           success: false,
+          message: 'Label not found.',
         });
+      }
+
       dbLabel.label_name = name;
       dbLabel.label_dimension = label;
       dbLabel.label_template = templateData;
       dbLabel.template_type = type;
+
       await dbLabel.save();
-      return { success: true, message: AllMessages.LBL_UPDT };
+
+      return {
+        success: true,
+        message: AllMessages.LBL_UPDT,
+      };
     } catch (err) {
+      console.error('❌ updateLabelTemplate error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
-  async getAllLabelTemplates(user: any, query: any) {
+  /**
+   * @description Get all label templaets
+   */
+  async getAllLabelTemplates(user: any, query: DTO.GetAllLabelTemplatesQueryDto) {
     try {
       const { search = '', page = 1, limit = 10, type } = query;
-      const offset = (Number(page) - 1) * Number(limit);
-      const whereCondition: any = { store_id: user.storeId, deleted_at: null };
 
-      if (search) whereCondition.label_name = { [Op.like]: `%${search}%` };
+      const offset = (page - 1) * limit;
 
-      if (type) whereCondition.template_type = type;
+      const whereCondition: any = {
+        store_id: user.storeId,
+        deleted_at: null,
+      };
+
+      if (search) {
+        whereCondition.label_name = { [Op.like]: `%${search}%` };
+      }
+
+      if (type) {
+        whereCondition.template_type = type;
+      }
 
       const { rows, count } = await this.productRepo.labelModel.findAndCountAll({
         where: whereCondition,
@@ -400,53 +526,75 @@ export class StoreService {
         pagination: {
           total: count,
           currentPage: Number(page),
-          totalPages: Math.ceil(count / Number(limit)),
+          totalPages: Math.ceil(count / limit),
         },
       };
     } catch (err) {
       console.log('err', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
+  /**
+   * @description Get single label template
+   */
   async getLabelTemplateById(user: any, id: number) {
     try {
       const label = await this.productRepo.labelModel.findOne({
         where: { store_id: user.storeId, id },
       });
-      if (!label)
+
+      if (!label) {
         throw new BadRequestException({
-          message: 'Label not found.',
           success: false,
+          message: 'Label not found.',
         });
-      return { success: true, data: label };
+      }
+
+      return {
+        success: true,
+        data: label,
+      };
     } catch (err) {
+      console.error('❌ getLabeltemplate error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
 
+  /**
+   * @description Delete label template
+   */
   async deleteLabelTemplate(id: number) {
     try {
       const assigned = await this.productRepo.templateModel.findOne({
-        where: { [Op.or]: [{ display_label_id: id }, { item_label_id: id }] },
+        where: {
+          [Op.or]: [{ display_label_id: id }, { item_label_id: id }],
+        },
       });
-      if (assigned)
+
+      if (assigned) {
         throw new BadRequestException({
-          message: 'Assigned label cannot be deleted.',
           success: false,
+          message: 'Assigned label cannot be deleted.',
         });
-      await this.productRepo.labelModel.destroy({ where: { id } });
-      return { success: true, message: AllMessages.LBL_DLT };
+      }
+
+      await this.productRepo.labelModel.update({ deleted_at: new Date() }, { where: { id } });
+      return {
+        success: true,
+        message: AllMessages.LBL_DLT,
+      };
     } catch (err) {
+      console.error('❌ deleteLabelTemplate error:', err);
       throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
+        message: AllMessages.SMTHG_WRNG,
       });
     }
   }
