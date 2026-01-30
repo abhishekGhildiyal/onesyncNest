@@ -73,7 +73,38 @@ export class MarkInventorySold {
       for (const brand of products) {
         for (const item of (brand as any).items || []) {
           if (!item.products) continue;
+
           for (const qty of item.sizeQuantities || []) {
+            const size = String(qty.variant_size).trim();
+
+            // check active variant
+            const activeVariant = await this.productRepo.variantModel.findOne({
+              where: {
+                productId: item.products.product_id,
+                status: 1,
+                quantity: { [Op.gt]: 0 },
+                [Op.and]: Sequelize.where(Sequelize.fn('TRIM', Sequelize.col('option1value')), size),
+              },
+              transaction,
+            });
+
+            // ❌ no active variant → zero demand
+            if (!activeVariant) {
+              console.log(`⚠️ No active variant → zeroing demand | product=${item.products.product_id}, size=${size}`);
+
+              // zero item demand
+              await this.pkgRepo.packageBrandItemsModel.update(
+                { consumerDemand: 0 },
+                { where: { id: item.id }, transaction },
+              );
+
+              // zero selected capacity for this size
+              await this.pkgRepo.packageBrandItemsQtyModel.update(
+                { selectedCapacity: 0 },
+                { where: { id: qty.id }, transaction },
+              );
+            }
+
             variantEntries.push({
               size: String(qty.variant_size).trim(),
               selected_quantity: Number(qty.selectedCapacity) || 0,
@@ -129,6 +160,8 @@ export class MarkInventorySold {
           },
           order: [['id', 'ASC']],
           transaction,
+          lock: transaction.LOCK.UPDATE,
+          skipLocked: true, // 🔒 Skip already-locked rows
         });
 
         if (!variants?.length) {
@@ -168,7 +201,7 @@ export class MarkInventorySold {
             },
           );
 
-          // AccountType 0
+          // ✅ AccountType 0: price always, payout depends on store.is_discount
           const variantFee = variantsToSell[0]?.fee || 0;
           const payoutUpdate = store.is_discount
             ? undefined
@@ -226,6 +259,7 @@ export class MarkInventorySold {
       if (allSoldInventoryIds.size > 0) {
         console.log(`🛍️ Preparing Shopify deletion for ${allSoldInventoryIds.size} sold inventory items...`);
 
+        // Create Shopify service
         const shopifyService = this.shopifyFactory.createService({
           shopify_store: store.shopify_store,
           shopify_token: store.shopify_token,
@@ -238,6 +272,7 @@ export class MarkInventorySold {
           where: { id: [...allSoldInventoryIds], storeId },
           attributes: ['id', 'shopifyId', 'product_id'],
           transaction,
+          lock: transaction.LOCK.UPDATE,
         });
 
         const validItems = inventoryItems.filter((i) => i.shopifyId);

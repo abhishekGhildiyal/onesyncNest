@@ -79,7 +79,7 @@ export class ReducePackageQuantity {
     const activePackageIds = activePackages.map((pkg) => pkg.id);
 
     if (!activePackageIds.length) {
-      // console.log("⚪ No active packages to sync.");
+      console.log('⚪ No active packages to sync.');
       return;
     }
 
@@ -111,15 +111,20 @@ export class ReducePackageQuantity {
       transaction,
     });
 
+    console.log(`🔍 Found ${qtyRows.length} package items to sync`);
+
     if (!qtyRows.length) return;
+
+    let itemsSynced = 0;
 
     for (const qtyRow of qtyRows) {
       const { maxCapacity, selectedCapacity, qtyItem } = qtyRow as any; // Cast if relations not typed
-      const consumerDemand: number = Number(qtyItem.consumerDemand) || 0;
+      const { id: itemId, consumerDemand } = qtyItem;
 
       const newMaxCapacity = Math.max(0, Number(maxCapacity) - soldQty);
       const newSelectedCapacity =
         (Number(selectedCapacity) || 0) > remainingStock ? remainingStock : Number(selectedCapacity) || 0;
+
       const newConsumerDemand = consumerDemand > remainingStock ? remainingStock : consumerDemand;
 
       await (qtyRow as any).update(
@@ -132,7 +137,11 @@ export class ReducePackageQuantity {
 
       await (qtyItem as any).update({ consumerDemand: newConsumerDemand }, { transaction });
 
-      // console.log(`✅ Synced Package ${qtyRow.qtyItem.brand.package_id}, Item ${qtyItem.id}`);
+      itemsSynced++;
+      const packageId = qtyRow.qtyItem?.brand?.package_id || 'unknown';
+      console.log(`✅ Synced Package ${packageId}, Item ${itemId}`);
     }
+
+    console.log(`🎯 [reduceSoldQuantityForPackages] COMPLETE: Synced ${itemsSynced} items for ${product_id}-${size}`);
   };
 }
