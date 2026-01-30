@@ -77,7 +77,7 @@ export class MarkInventorySold {
             variantEntries.push({
               size: String(qty.variant_size).trim(),
               selected_quantity: Number(qty.selectedCapacity) || 0,
-              productId: item.products.product_id,
+              product_id: item.products.product_id,
               productName: item.products.itemName,
               itemId: qty.item_id,
               sizeQtyId: qty.id,
@@ -95,13 +95,13 @@ export class MarkInventorySold {
 
       console.log(`🧩 Total variant entries: ${variantEntries.length}`);
 
-      // 3️⃣ Group by productId + size, but keep brandIds separate
+      // 3️⃣ Group by product_id + size, but keep brandIds separate
       const groups = new Map();
       for (const entry of variantEntries) {
-        const key = `${entry.productId}||${entry.size}`;
+        const key = `${entry.product_id}||${entry.size}`;
         if (!groups.has(key)) {
           groups.set(key, {
-            productId: entry.productId,
+            product_id: entry.product_id,
             size: entry.size,
             totalNeeded: 0,
             brandMap: new Map(),
@@ -116,14 +116,14 @@ export class MarkInventorySold {
 
       // 4️⃣ Process grouped variants
       for (const [_, group] of groups.entries()) {
-        const { productId, size, totalNeeded, brandMap } = group;
+        const { product_id, size, totalNeeded, brandMap } = group;
         if (!size || !totalNeeded) continue;
 
-        console.log(`\n🔹 Processing product=${productId}, size=${size}, totalNeeded=${totalNeeded}`);
+        console.log(`\n🔹 Processing product=${product_id}, size=${size}, totalNeeded=${totalNeeded}`);
 
         const variants = await this.productRepo.variantModel.findAll({
           where: {
-            productId,
+            product_id,
             status: 1,
             [Op.and]: Sequelize.where(Sequelize.fn('TRIM', Sequelize.col('option1Value')), size),
           },
@@ -132,12 +132,12 @@ export class MarkInventorySold {
         });
 
         if (!variants?.length) {
-          console.warn(`⚠️ No stock found for product ${productId} size ${size}`);
+          console.warn(`⚠️ No stock found for product ${product_id} size ${size}`);
           continue;
         }
 
         let remaining = totalNeeded;
-        for (const entry of variantEntries.filter((e) => e.productId === productId && e.size === size)) {
+        for (const entry of variantEntries.filter((e) => e.product_id === product_id && e.size === size)) {
           if (remaining <= 0) break;
 
           const soldCount = Math.min(entry.selected_quantity, remaining);
@@ -204,14 +204,14 @@ export class MarkInventorySold {
           }
 
           console.log(
-            `✅ Sold ${variantIds.length} variants for product ${productId}, size ${size}, price=${entry.sellingPrice}`,
+            `✅ Sold ${variantIds.length} variants for product ${product_id}, size ${size}, price=${entry.sellingPrice}`,
           );
         }
 
         // 5️⃣ Sync brand quantities
         for (const [brandId, brandQty] of brandMap.entries()) {
           await this.ReducePkgQtyHelper.reduceSoldQuantityForPackages({
-            productId,
+            product_id,
             storeId,
             size,
             soldQty: brandQty,
@@ -236,7 +236,7 @@ export class MarkInventorySold {
 
         const inventoryItems = await this.productRepo.inventoryModel.findAll({
           where: { id: [...allSoldInventoryIds], storeId },
-          attributes: ['id', 'shopifyId', 'productId'],
+          attributes: ['id', 'shopifyId', 'product_id'],
           transaction,
         });
 
@@ -247,32 +247,32 @@ export class MarkInventorySold {
         }
 
         const groupedByProduct = validItems.reduce((acc, item) => {
-          if (!acc[item.productId]) acc[item.productId] = [];
-          acc[item.productId].push(item.shopifyId);
+          if (!acc[item.product_id]) acc[item.product_id] = [];
+          acc[item.product_id].push(item.shopifyId);
           return acc;
         }, {});
 
-        for (const [productId, shopifyIds] of Object.entries(groupedByProduct)) {
+        for (const [product_id, shopifyIds] of Object.entries(groupedByProduct)) {
           console.log(
-            `🧹 Deleting Shopify products for productId=${productId} (${(shopifyIds as string[]).length} IDs)`,
+            `🧹 Deleting Shopify products for product_id=${product_id} (${(shopifyIds as string[]).length} IDs)`,
           );
 
-          const deleteResults = await shopifyService.deleteItems(shopifyIds as string[], Number(productId));
+          const deleteResults = await shopifyService.deleteItems(shopifyIds as string[], Number(product_id));
 
           const allDeletedOrNotFound = deleteResults.every((r) => r.success || r.message === 'Not found');
 
           const deletedCount = deleteResults.filter((r) => r.success).length;
           const notFoundCount = deleteResults.filter((r) => r.message === 'Not found').length;
           console.log(
-            `🧾 Product ${productId}: Deleted=${deletedCount}, NotFound=${notFoundCount}, Total=${deleteResults.length}`,
+            `🧾 Product ${product_id}: Deleted=${deletedCount}, NotFound=${notFoundCount}, Total=${deleteResults.length}`,
           );
 
           // ✅ Cleanup web-scope items when all variants are gone
           /**if (allDeletedOrNotFound) {
-                console.log(`🌐 All variants gone — cleaning up web-scope for product ${productId}...`);
+                console.log(`🌐 All variants gone — cleaning up web-scope for product ${product_id}...`);
                 const webItems = await InventoryModel.findAll({
                     where: {
-                        productId,
+                        product_id,
                         publishedScope: "web",
                         storeId,
                     },
@@ -296,7 +296,7 @@ export class MarkInventorySold {
                         })
                     );
                 } else {
-                    console.log(`ℹ️ No web-scope items found for product ${productId}`);
+                    console.log(`ℹ️ No web-scope items found for product ${product_id}`);
                 }
             } */
 
@@ -304,11 +304,11 @@ export class MarkInventorySold {
           // ✅ desync Web items
           // ✅ desync Web items - matching the CURL format
           if (allDeletedOrNotFound) {
-            console.log(`🌐 All variants gone — cleaning up web-scope for product ${productId}...`);
+            console.log(`🌐 All variants gone — cleaning up web-scope for product ${product_id}...`);
 
             const webItems = await this.productRepo.inventoryModel.findAll({
               where: {
-                productId,
+                product_id,
                 publishedScope: 'web',
                 storeId,
               },
@@ -317,12 +317,12 @@ export class MarkInventorySold {
             });
 
             if (!webItems.length) {
-              console.log(`ℹ️ No web-scope items found for product ${productId}`);
+              console.log(`ℹ️ No web-scope items found for product ${product_id}`);
               continue;
             }
 
             // ✅ EXACT curl format: array of ids
-            const postData = webItems.map((i) => i.productId);
+            const postData = webItems.map((i) => i.product_id);
 
             const requestOptions: any = {
               method: 'POST',
@@ -338,7 +338,7 @@ export class MarkInventorySold {
             };
 
             try {
-              console.log(`🌐 Desyncing web-scope items for product ${productId}...${store.store_domain}`);
+              console.log(`🌐 Desyncing web-scope items for product ${product_id}...${store.store_domain}`);
               const syncResponse = await fetch(
                 `https://onesync-api-50c03c74d4bf.herokuapp.com/${store.store_domain}/syncWebInventories`,
                 requestOptions,
@@ -359,7 +359,7 @@ export class MarkInventorySold {
       console.log(`🎯 SoldInventory complete for order ${orderId}`);
     } catch (err) {
       console.error('❌ Error in markSoldInventory', err);
-      throw new BadRequestException(err.message);
+      throw new BadRequestException({ message: err.message, success: false });
     }
   };
 }

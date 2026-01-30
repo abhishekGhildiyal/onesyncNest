@@ -25,7 +25,7 @@ export class ReducePackageQuantity {
   ) {}
 
   reduceSoldQuantityForPackages = async ({
-    productId,
+    product_id,
     storeId,
     size,
     soldQty,
@@ -33,7 +33,7 @@ export class ReducePackageQuantity {
     excludeOrderId = undefined,
     brandId = undefined,
   }: {
-    productId: number;
+    product_id: number;
     storeId: number | string;
     size: string;
     soldQty: number;
@@ -44,14 +44,14 @@ export class ReducePackageQuantity {
     // console.log(`🧩 [reduceSoldQuantityForPackages] Syncing packages...`);
 
     if (!size) {
-      console.warn(`⚠️ Variant ${productId} has undefined size, skipping capacity sync.`);
+      console.warn(`⚠️ Variant ${product_id} has undefined size, skipping capacity sync.`);
       return;
     }
 
     // Step 1: Get ACTUAL remaining stock from VariantModel
     const remainingVariantStock = await this.productrepo.variantModel.sum('quantity', {
       where: {
-        productId,
+        product_id,
         status: 1,
         [Op.and]: Sequelize.where(Sequelize.fn('TRIM', Sequelize.col('option1Value')), size),
       },
@@ -59,7 +59,7 @@ export class ReducePackageQuantity {
     });
 
     const remainingStock = remainingVariantStock || 0;
-    // console.log(`📦 ACTUAL Remaining Stock for (${productId}, ${size}) = ${remainingStock}`);
+    // console.log(`📦 ACTUAL Remaining Stock for (${product_id}, ${size}) = ${remainingStock}`);
 
     // Step 2: Get active packages (excluding current order)
     const whereClause: any = {
@@ -97,7 +97,7 @@ export class ReducePackageQuantity {
         {
           model: this.pkgRepo.packageBrandItemsModel,
           as: 'qtyItem', // Ensure strict association alias match
-          where: { product_id: productId },
+          where: { product_id: product_id },
           include: [
             {
               model: this.pkgRepo.packageBrandModel,

@@ -45,7 +45,10 @@ export class ManualOrderHelperService {
     });
 
     if (!accessOrder) {
-      throw new BadRequestException(AllMessages.PAKG_NF);
+      throw new BadRequestException({
+        message: AllMessages.PAKG_NF,
+        success: false,
+      });
     }
 
     const store = await this.storeRepo.storeModel.findByPk(accessOrder.store_id, {
@@ -54,7 +57,10 @@ export class ManualOrderHelperService {
     });
 
     if (!store) {
-      throw new BadRequestException('Store not found.');
+      throw new BadRequestException({
+        message: 'Store not found.',
+        success: false,
+      });
     }
 
     // Create manual package order

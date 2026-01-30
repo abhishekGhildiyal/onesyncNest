@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Request } from 'express';
 import { UserRepository } from 'src/db/repository/user.repository';
 
@@ -29,24 +23,27 @@ export class AuthGuard implements CanActivate {
     // 2️⃣ Extract headers
     const userIdHeader = request.headers['userid'] || request.headers['userId'];
     const token = request.headers['authorization'];
-    const storeIdHeader =
-      request.headers['storeid'] || request.headers['storeId'];
+    const storeIdHeader = request.headers['storeid'] || request.headers['storeId'];
     const roleIdHeader = request.headers['roleid'] || request.headers['roleId'];
 
     if (!userIdHeader) {
       console.error('[AUTH] Missing userId header');
-      throw new BadRequestException('Access denied. userId is required.');
+      throw new BadRequestException({
+        message: 'Access denied. userId is required.',
+        success: false,
+      });
     }
 
     const userId = parseInt(userIdHeader as string, 10);
-    const storeId = storeIdHeader
-      ? parseInt(storeIdHeader as string, 10)
-      : null;
+    const storeId = storeIdHeader ? parseInt(storeIdHeader as string, 10) : null;
     const roleId = roleIdHeader ? parseInt(roleIdHeader as string, 10) : null;
 
     if (isNaN(userId)) {
       console.error('[AUTH] Invalid userId format:', userIdHeader);
-      throw new BadRequestException('Invalid userId format.');
+      throw new BadRequestException({
+        message: 'Invalid userId format.',
+        success: false,
+      });
     }
 
     // console.log('[AUTH] Headers:', { userId, storeId, roleId, token });
@@ -107,9 +104,7 @@ export class AuthGuard implements CanActivate {
     let selectedMapping;
 
     if (roleId !== null && storeId !== null) {
-      selectedMapping = plainMappings.find(
-        (m) => m.roleId === roleId && Number(m.storeId) === storeId,
-      );
+      selectedMapping = plainMappings.find((m) => m.roleId === roleId && Number(m.storeId) === storeId);
     }
 
     if (!selectedMapping && roleId !== null) {
@@ -117,22 +112,16 @@ export class AuthGuard implements CanActivate {
     }
 
     if (!selectedMapping && storeId !== null) {
-      selectedMapping = plainMappings.find(
-        (m) => Number(m.storeId) === storeId,
-      );
+      selectedMapping = plainMappings.find((m) => Number(m.storeId) === storeId);
     }
 
     if (!selectedMapping) {
-      selectedMapping =
-        plainMappings.find((m) => m.role?.roleName === 'Consumer') ||
-        plainMappings[0];
+      selectedMapping = plainMappings.find((m) => m.role?.roleName === 'Consumer') || plainMappings[0];
     }
 
     if (!selectedMapping) {
       console.error('[AUTH] No valid mapping found');
-      throw new ForbiddenException(
-        'Access denied. No valid user mapping found.',
-      );
+      throw new ForbiddenException('Access denied. No valid user mapping found.');
     }
 
     // 6️⃣ Check if user exists, fetch separately if needed
@@ -155,18 +144,17 @@ export class AuthGuard implements CanActivate {
     if (!isConsumer) {
       if (storeId === null) {
         console.error('[AUTH] Missing storeId header for non-consumer role');
-        throw new BadRequestException(
-          'Access denied. storeId is required for this user role.',
-        );
+        throw new BadRequestException({
+          message: 'Access denied. storeId is required for this user role.',
+          success: false,
+        });
       }
 
       const mappingStoreId = Number(selectedMapping.storeId);
 
       if (mappingStoreId !== storeId) {
         console.error('[AUTH] StoreId mismatch!');
-        throw new ForbiddenException(
-          "Access denied. User doesn't have access to this store.",
-        );
+        throw new ForbiddenException("Access denied. User doesn't have access to this store.");
       }
     }
 
@@ -174,8 +162,7 @@ export class AuthGuard implements CanActivate {
     (request as any).user = {
       userId: selectedMapping.user.id,
       email: selectedMapping.user.email,
-      fullName:
-        `${selectedMapping.user.firstName ?? ''} ${selectedMapping.user.lastName ?? ''}`.trim(),
+      fullName: `${selectedMapping.user.firstName ?? ''} ${selectedMapping.user.lastName ?? ''}`.trim(),
       permissions: selectedMapping.role?.permissions || [],
       roleId: selectedMapping.roleId,
       roleName: selectedMapping.role?.roleName,

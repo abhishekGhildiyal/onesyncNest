@@ -27,7 +27,10 @@ export class UsersService {
       };
     } catch (err) {
       console.log(err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -49,7 +52,10 @@ export class UsersService {
       });
 
       if (!user) {
-        throw new BadRequestException(AllMessages.USERS_NF);
+        throw new BadRequestException({
+          message: AllMessages.USERS_NF,
+          success: false,
+        });
       }
 
       if (firstName) user.firstName = firstName;
@@ -57,8 +63,7 @@ export class UsersService {
       if (phnNo !== undefined) user.phnNo = phnNo;
 
       if (billingAddress) {
-        const { b_address, b_address2, b_country, b_city, b_state, b_zip } =
-          billingAddress;
+        const { b_address, b_address2, b_country, b_city, b_state, b_zip } = billingAddress;
         user.address = b_address;
         user.address2 = b_address2;
         user.country = b_country;
@@ -70,7 +75,10 @@ export class UsersService {
       if (oldPassword && newPassword) {
         const verified = compareMD5(oldPassword, user.password);
         if (!verified) {
-          throw new BadRequestException(AllMessages.PSWRD_NM);
+          throw new BadRequestException({
+            message: AllMessages.PSWRD_NM,
+            success: false,
+          });
         }
         user.password = hashPasswordMD5(newPassword);
       }
@@ -82,17 +90,7 @@ export class UsersService {
       if (Array.isArray(shippingAddress) && shippingAddress.length > 0) {
         let selectedSet = false;
         for (const ship of shippingAddress) {
-          let {
-            label,
-            address,
-            address2,
-            country,
-            city,
-            state,
-            zip,
-            selected,
-            sameAddress,
-          } = ship;
+          let { label, address, address2, country, city, state, zip, selected, sameAddress } = ship;
           if (selected && !selectedSet) {
             selectedSet = true;
           } else {
@@ -123,7 +121,10 @@ export class UsersService {
     } catch (err) {
       console.log('userSetting err', err);
       if (err instanceof BadRequestException) throw err;
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -144,7 +145,10 @@ export class UsersService {
       };
     } catch (err) {
       console.log(err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -154,9 +158,7 @@ export class UsersService {
         where: { isSuperAdminPermission: false },
       });
 
-      const consumerPermissions = allPermissions.filter(
-        (p) => p.isConsumerPermission,
-      );
+      const consumerPermissions = allPermissions.filter((p) => p.isConsumerPermission);
       const permissions = allPermissions.filter((p) => !p.isConsumerPermission);
 
       return {
@@ -168,7 +170,10 @@ export class UsersService {
       };
     } catch (err) {
       console.error('❌ getPermissions error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -182,7 +187,10 @@ export class UsersService {
       });
       if (!user) {
         await t.rollback();
-        throw new BadRequestException(AllMessages.USERS_NF);
+        throw new BadRequestException({
+          message: AllMessages.USERS_NF,
+          success: false,
+        });
       }
 
       const restrictedRoles = [ROLES.CONSIGNER, ROLES.CONSUMER];
@@ -201,18 +209,20 @@ export class UsersService {
 
       if (!mappings.length) {
         await t.rollback();
-        throw new BadRequestException('User mapping for this store not found.');
+        throw new BadRequestException({
+          message: 'User mapping for this store not found.',
+          success: false,
+        });
       }
 
-      const validMappings = mappings.filter(
-        (m) => !restrictedRoles.includes(m.role.roleName),
-      );
+      const validMappings = mappings.filter((m) => !restrictedRoles.includes(m.role.roleName));
 
       if (!validMappings.length) {
         await t.rollback();
-        throw new BadRequestException(
-          'No valid mappings to update for this user.',
-        );
+        throw new BadRequestException({
+          message: 'No valid mappings to update for this user.',
+          success: false,
+        });
       }
 
       await Promise.all(
@@ -236,7 +246,10 @@ export class UsersService {
       if (t) await t.rollback();
       console.error('❌ updateAgentStatus error:', err);
       if (err instanceof BadRequestException) throw err;
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -251,11 +264,7 @@ export class UsersService {
 
     try {
       const {
-        status = [
-          PACKAGE_STATUS.IN_PROGRESS,
-          PACKAGE_STATUS.CLOSE,
-          PACKAGE_STATUS.COMPLETED,
-        ],
+        status = [PACKAGE_STATUS.IN_PROGRESS, PACKAGE_STATUS.CLOSE, PACKAGE_STATUS.COMPLETED],
         page = 1,
         limit = 10,
       } = body;
@@ -366,7 +375,10 @@ export class UsersService {
       };
     } catch (err) {
       console.error('❌ consumerList error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -400,7 +412,10 @@ export class UsersService {
       };
     } catch (err) {
       console.error('❌ checkAddress error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -421,17 +436,7 @@ export class UsersService {
             attributes: [],
           },
         ],
-        attributes: [
-          'id',
-          'firstName',
-          'lastName',
-          'address',
-          'city',
-          'state',
-          'zip',
-          'country',
-          'phnNo',
-        ],
+        attributes: ['id', 'firstName', 'lastName', 'address', 'city', 'state', 'zip', 'country', 'phnNo'],
       });
 
       if (!consumer) {
@@ -450,7 +455,10 @@ export class UsersService {
       };
     } catch (err) {
       console.error('❌ consumerDetails error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 }

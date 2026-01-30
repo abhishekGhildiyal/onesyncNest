@@ -181,7 +181,7 @@ export const packageAssociations = () => {
   });
 
   ProductList.hasMany(Variant, {
-    foreignKey: 'productId',
+    foreignKey: 'product_id',
     as: 'variants',
   });
 };

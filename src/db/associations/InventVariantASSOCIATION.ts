@@ -38,7 +38,7 @@ export const inventVariantAssociations = () => {
   });
 
   Variant.belongsTo(ProductList, {
-    foreignKey: 'productId',
+    foreignKey: 'product_id',
     as: 'product',
   });
 

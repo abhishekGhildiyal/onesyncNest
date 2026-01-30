@@ -18,15 +18,7 @@ export class InventoryService {
    */
   async getAllInventory(user: getUser, body: DTO.GetAllInventoryDto) {
     const { userId } = user;
-    const {
-      page = 1,
-      limit = 10,
-      search,
-      productType,
-      size,
-      sort = 'newest',
-      brand,
-    } = body;
+    const { page = 1, limit = 10, search, productType, size, sort = 'newest', brand } = body;
 
     try {
       const Nlimit = parseInt(String(limit), 10);
@@ -54,22 +46,10 @@ export class InventoryService {
             order = [['createdAt', 'ASC']];
             break;
           case 'name_asc':
-            order = [
-              [
-                { model: this.pkgRepo.consumerProductModel, as: 'product' },
-                'itemName',
-                'ASC',
-              ],
-            ];
+            order = [[{ model: this.pkgRepo.consumerProductModel, as: 'product' }, 'itemName', 'ASC']];
             break;
           case 'name_desc':
-            order = [
-              [
-                { model: this.pkgRepo.consumerProductModel, as: 'product' },
-                'itemName',
-                'DESC',
-              ],
-            ];
+            order = [[{ model: this.pkgRepo.consumerProductModel, as: 'product' }, 'itemName', 'DESC']];
             break;
         }
       }
@@ -78,13 +58,7 @@ export class InventoryService {
         {
           model: this.pkgRepo.consumerProductModel,
           as: 'product',
-          attributes: [
-            'skuNumber',
-            'itemName',
-            'image',
-            'brand_id',
-            'productId',
-          ],
+          attributes: ['skuNumber', 'itemName', 'image', 'brand_id', 'productId'],
           where: {},
         },
       ];
@@ -96,14 +70,13 @@ export class InventoryService {
         includeClause[0].where.brand_id = brand;
       }
 
-      const { rows: variantList, count: total } =
-        await this.pkgRepo.consumerInventoryModel.findAndCountAll({
-          where: whereClause,
-          limit: Nlimit,
-          offset,
-          order,
-          include: includeClause,
-        });
+      const { rows: variantList, count: total } = await this.pkgRepo.consumerInventoryModel.findAndCountAll({
+        where: whereClause,
+        limit: Nlimit,
+        offset,
+        order,
+        include: includeClause,
+      });
 
       return {
         message: '',
@@ -115,7 +88,10 @@ export class InventoryService {
         },
       };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -127,12 +103,11 @@ export class InventoryService {
       const { userId } = user;
       const { page = 1, limit = 10 } = body;
 
-      const consumerProductMappings =
-        await this.pkgRepo.consumerProductsMappingModel.findAll({
-          where: { consumerId: userId },
-          attributes: ['productId'],
-          raw: true,
-        });
+      const consumerProductMappings = await this.pkgRepo.consumerProductsMappingModel.findAll({
+        where: { consumerId: userId },
+        attributes: ['productId'],
+        raw: true,
+      });
 
       const productIds = consumerProductMappings.map((m) => m.productId);
 
@@ -151,27 +126,22 @@ export class InventoryService {
       const Nlimit = parseInt(String(limit), 10);
       const offset = (parseInt(String(page), 10) - 1) * Nlimit;
 
-      const { rows: products, count: total } =
-        await this.pkgRepo.consumerProductModel.findAndCountAll({
-          where: { product_id: { [Op.in]: productIds } },
-          limit: Nlimit,
-          offset,
-          order: [['updatedAt', 'DESC']],
-          raw: true,
-        });
+      const { rows: products, count: total } = await this.pkgRepo.consumerProductModel.findAndCountAll({
+        where: { product_id: { [Op.in]: productIds } },
+        limit: Nlimit,
+        offset,
+        order: [['updatedAt', 'DESC']],
+        raw: true,
+      });
 
       const consumerProductIds = products.map((p) => p.product_id);
 
-      const stockCounts =
-        await this.pkgRepo.consumerProductVariantModel.findAll({
-          where: { productId: { [Op.in]: consumerProductIds } },
-          attributes: [
-            'productId',
-            [Sequelize.fn('COUNT', Sequelize.col('id')), 'stockCount'],
-          ],
-          group: ['productId'],
-          raw: true,
-        });
+      const stockCounts = await this.pkgRepo.consumerProductVariantModel.findAll({
+        where: { productId: { [Op.in]: consumerProductIds } },
+        attributes: ['productId', [Sequelize.fn('COUNT', Sequelize.col('id')), 'stockCount']],
+        group: ['productId'],
+        raw: true,
+      });
 
       const stockMap = stockCounts.reduce((acc, item: any) => {
         acc[item.productId] = item.stockCount;
@@ -195,7 +165,10 @@ export class InventoryService {
       };
     } catch (err) {
       console.log('consumerProducts error->', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -221,7 +194,10 @@ export class InventoryService {
       };
     } catch (err) {
       console.log('productVariants err', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -231,12 +207,11 @@ export class InventoryService {
   async inventoryBrands(user: getUser) {
     try {
       const { userId } = user;
-      const productMappings =
-        await this.pkgRepo.consumerProductsMappingModel.findAll({
-          where: { consumerId: userId },
-          attributes: ['productId'],
-          raw: true,
-        });
+      const productMappings = await this.pkgRepo.consumerProductsMappingModel.findAll({
+        where: { consumerId: userId },
+        attributes: ['productId'],
+        raw: true,
+      });
       const productIds = productMappings.map((m) => m.productId);
 
       const productBrands = await this.pkgRepo.consumerProductModel.findAll({
@@ -247,10 +222,7 @@ export class InventoryService {
 
       const uniqueBrands = [
         ...new Map(
-          productBrands.map((b: any) => [
-            b.brand_id as any,
-            { brand_id: b.brand_id, brand: b.brand } as any,
-          ]),
+          productBrands.map((b: any) => [b.brand_id as any, { brand_id: b.brand_id, brand: b.brand } as any]),
         ).values(),
       ];
 
@@ -260,7 +232,10 @@ export class InventoryService {
       };
     } catch (err) {
       console.log('invenoryBrands err', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -270,7 +245,10 @@ export class InventoryService {
   async hyperAddinventory(body: any) {
     const sequelize = this.productRepo.inventoryModel.sequelize;
     if (!sequelize) {
-      throw new BadRequestException('Sequelize instance not found');
+      throw new BadRequestException({
+        message: 'Sequelize instance not found',
+        success: false,
+      });
     }
     const t = await sequelize.transaction();
     try {
@@ -281,18 +259,16 @@ export class InventoryService {
         transaction: t,
       });
 
-      const product = await this.productRepo.productListModel.findByPk(
-        productId,
-        {
-          transaction: t,
-        },
-      );
+      const product = await this.productRepo.productListModel.findByPk(productId, {
+        transaction: t,
+      });
 
       if (!allActiveVariants.length) {
         await t.rollback();
-        throw new BadRequestException(
-          'No active variants found for this product.',
-        );
+        throw new BadRequestException({
+          message: 'No active variants found for this product.',
+          success: false,
+        });
       }
 
       const originalVariant = await this.productRepo.variantModel.findOne({
@@ -302,8 +278,7 @@ export class InventoryService {
       });
 
       const calcAvg = (field: string) =>
-        allActiveVariants.reduce((sum, v) => sum + (Number(v[field]) || 0), 0) /
-        allActiveVariants.length;
+        allActiveVariants.reduce((sum, v) => sum + (Number(v[field]) || 0), 0) / allActiveVariants.length;
 
       const findMostUsedLocation = () => {
         const counts: any = {};
@@ -311,18 +286,13 @@ export class InventoryService {
           if (!v.location) continue;
           counts[v.location] = (counts[v.location] || 0) + 1;
         }
-        return (
-          Object.entries(counts).sort(
-            (a: any, b: any) => b[1] - a[1],
-          )[0]?.[0] || null
-        );
+        return Object.entries(counts).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] || null;
       };
 
       if (action === 'add') {
         const priceToUse = originalVariant?.price || calcAvg('price');
         const costToUse = originalVariant?.cost || calcAvg('cost');
-        const locationToUse =
-          originalVariant?.location || findMostUsedLocation();
+        const locationToUse = originalVariant?.location || findMostUsedLocation();
 
         const newVariants: any[] = [];
 
@@ -348,9 +318,7 @@ export class InventoryService {
           );
 
           // Get plain variant data to clone
-          const variantData: any = originalVariant
-            ? originalVariant.get({ plain: true })
-            : {};
+          const variantData: any = originalVariant ? originalVariant.get({ plain: true }) : {};
           const {
             id,
             created_on,
@@ -401,18 +369,16 @@ export class InventoryService {
 
         if (!variantsToRemove.length) {
           await t.rollback();
-          throw new BadRequestException(
-            `No active ${size} variants found to remove.`,
-          );
+          throw new BadRequestException({
+            message: `No active ${size} variants found to remove.`,
+            success: false,
+          });
         }
 
         const variantIds = variantsToRemove.map((v) => v.id);
         const inventoryIds = variantsToRemove.map((v) => v.inventoryId);
 
-        await this.productRepo.variantModel.update(
-          { status: 0 },
-          { where: { id: variantIds }, transaction: t },
-        );
+        await this.productRepo.variantModel.update({ status: 0 }, { where: { id: variantIds }, transaction: t });
         await this.productRepo.inventoryModel.update(
           { isVisible: false },
           { where: { id: inventoryIds }, transaction: t },
@@ -426,12 +392,18 @@ export class InventoryService {
       }
 
       await t.rollback();
-      throw new BadRequestException("Invalid action. Use 'add' or 'remove'.");
+      throw new BadRequestException({
+        message: "Invalid action. Use 'add' or 'remove'.",
+        success: false,
+      });
     } catch (err) {
       if (t) await t.rollback();
       throw err instanceof BadRequestException
         ? err
-        : new BadRequestException(err.message);
+        : new BadRequestException({
+            message: err.message,
+            success: false,
+          });
     }
   }
 }

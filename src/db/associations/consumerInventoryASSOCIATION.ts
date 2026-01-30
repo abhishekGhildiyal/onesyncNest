@@ -1,8 +1,4 @@
-import {
-  ConsumerInventory,
-  ConsumerProductList,
-  ConsumerProductVariants,
-} from '../entities';
+import { ConsumerInventory, ConsumerProductList, ConsumerProductVariants } from '../entities';
 
 export const consumerInventoryAssociations = () => {
   // Product → Variants
@@ -17,11 +13,11 @@ export const consumerInventoryAssociations = () => {
 
   // Inventory → Product
   ConsumerInventory.belongsTo(ConsumerProductList, {
-    foreignKey: 'productId',
+    foreignKey: 'product_id',
     as: 'product',
   });
   ConsumerProductList.hasMany(ConsumerInventory, {
-    foreignKey: 'productId',
+    foreignKey: 'product_id',
     as: 'inventoryItems',
   });
 };

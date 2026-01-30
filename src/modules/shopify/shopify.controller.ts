@@ -25,7 +25,11 @@ export class ShopifyController {
   @Post('sync-product/:productId/:storeId')
   async productSync(@Param('productId') productId: number, @Param('storeId') storeId: number) {
     const store = await this.storeRepo.storeModel.findByPk(storeId);
-    if (!store) throw new BadRequestException('Store not found');
+    if (!store)
+      throw new BadRequestException({
+        message: 'Store not found',
+        success: false,
+      });
 
     const product = await this.productrepo.productListModel.findOne({
       where: { product_id: productId },
@@ -35,13 +39,20 @@ export class ShopifyController {
       ],
     });
 
-    if (!product) throw new BadRequestException('Product not found');
+    if (!product)
+      throw new BadRequestException({
+        message: 'Product not found',
+        success: false,
+      });
 
     const inventories = (product as any).inventories;
     const variants = (product as any).variants;
 
     if (!inventories?.length) {
-      throw new BadRequestException('Inventory not found');
+      throw new BadRequestException({
+        message: 'Inventory not found',
+        success: false,
+      });
     }
 
     // same as Express buildShopifyPayload
@@ -73,24 +84,37 @@ export class ShopifyController {
   async soldItem(@Param('storeId') storeId: number, @Body() body: { itemIds: number[] }) {
     const { itemIds } = body;
     if (!Array.isArray(itemIds) || itemIds.length === 0) {
-      throw new BadRequestException('itemIds array is required.');
+      throw new BadRequestException({
+        message: 'itemIds array is required.',
+        success: false,
+      });
     }
 
     const store = await this.storeRepo.storeModel.findByPk(storeId);
-    if (!store) throw new BadRequestException('Store not found.');
+    if (!store)
+      throw new BadRequestException({
+        message: 'Store not found.',
+        success: false,
+      });
 
     const inventoryItems = await this.productrepo.inventoryModel.findAll({
       where: { id: itemIds, storeId },
     });
 
     if (!inventoryItems.length) {
-      throw new BadRequestException('No matching inventory items found.');
+      throw new BadRequestException({
+        message: 'No matching inventory items found.',
+        success: false,
+      });
     }
 
     const shopifyProductIds = inventoryItems.map((item: any) => item.shopifyId).filter(Boolean);
 
     if (!shopifyProductIds.length) {
-      throw new BadRequestException('No items have valid Shopify IDs to delete.');
+      throw new BadRequestException({
+        message: 'No items have valid Shopify IDs to delete.',
+        success: false,
+      });
     }
 
     // ✅ EXPRESS-EQUIVALENT LINE

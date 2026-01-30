@@ -35,7 +35,10 @@ export class SaveOrderAsDraftHelper {
         transaction,
       });
       if (!accessOrder) {
-        throw new BadRequestException(AllMessages.PAKG_NF);
+        throw new BadRequestException({
+          message: AllMessages.PAKG_NF,
+          success: false,
+        });
       }
 
       // Fetch store for order_id prefix
@@ -45,7 +48,10 @@ export class SaveOrderAsDraftHelper {
       });
 
       if (!store) {
-        throw new BadRequestException('Store not found.');
+        throw new BadRequestException({
+          message: 'Store not found.',
+          success: false,
+        });
       }
 
       // Create draft PackageOrder
@@ -195,7 +201,10 @@ export class SaveOrderAsDraftHelper {
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
       console.error('saveOrderAsDraftHelper error:', err);
-      throw new BadRequestException(err.message || AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: err.message || AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   };
 }

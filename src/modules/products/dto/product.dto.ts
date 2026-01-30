@@ -6,6 +6,7 @@ import {
   IsEmail,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -114,9 +115,7 @@ export class LinkCustomerDto {
 
   @IsArray()
   @ArrayMinSize(1)
-  @Transform(({ value }) =>
-    value.map((email: string) => email.toLowerCase().trim()),
-  )
+  @Transform(({ value }) => value.map((email: string) => email.toLowerCase().trim()))
   @IsEmail({}, { each: true })
   customers: string[];
 
@@ -141,8 +140,13 @@ export class AllCustomersDto {
    PARAM ID
 ========================= */
 export class PackageIdParamDto {
-  @IsInt()
-  packageId: number;
+  @IsNotEmpty()
+  packageId: number | string;
+}
+
+export class OrderIdParamDto {
+  @IsNotEmpty()
+  orderId: number | string;
 }
 
 /* =========================

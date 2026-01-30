@@ -1,12 +1,5 @@
 // src/database/entities/audit.entity.ts
-import {
-  AutoIncrement,
-  Column,
-  DataType,
-  Model,
-  PrimaryKey,
-  Table,
-} from 'sequelize-typescript';
+import { AutoIncrement, Column, DataType, Model, PrimaryKey, Table } from 'sequelize-typescript';
 
 @Table({
   tableName: 'audit',
@@ -68,7 +61,7 @@ export class Audit extends Model {
     allowNull: true,
     field: 'product_id',
   })
-  declare productId: string;
+  declare product_id: string;
 
   @Column({
     type: DataType.STRING,

@@ -1,11 +1,4 @@
-import {
-  AutoIncrement,
-  Column,
-  DataType,
-  Model,
-  PrimaryKey,
-  Table,
-} from 'sequelize-typescript';
+import { AutoIncrement, Column, DataType, Model, PrimaryKey, Table } from 'sequelize-typescript';
 
 @Table({
   tableName: 'variant',
@@ -180,7 +173,7 @@ export class Variant extends Model {
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  declare productId: number;
+  declare product_id: number;
 
   @Column({
     type: DataType.STRING,

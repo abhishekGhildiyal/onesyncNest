@@ -19,8 +19,9 @@ export class OnboardingService {
   async resetPassword(body: any) {
     const { token, password } = body;
     // Implementation would depend on UserTokenModel
-    throw new BadRequestException(
-      'Reset password logic requires UserTokenModel which is missing in legacy source.',
-    );
+    throw new BadRequestException({
+      message: 'Reset password logic requires UserTokenModel which is missing in legacy source.',
+      success: false,
+    });
   }
 }

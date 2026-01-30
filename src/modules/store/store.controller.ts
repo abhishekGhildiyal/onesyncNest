@@ -1,16 +1,8 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 
 import { ApiTags } from '@nestjs/swagger';
+import type { getUser } from 'src/common/interfaces/common/getUser';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import {
@@ -30,22 +22,22 @@ export class StoreController {
   constructor(private readonly storeService: StoreService) {}
 
   @Post('address')
-  addAddress(@GetUser() user: any, @Body() body: AddAddressDto) {
+  addAddress(@GetUser() user: getUser, @Body() body: AddAddressDto) {
     return this.storeService.addAddress(user, body);
   }
 
   @Get('address')
-  getAddress(@GetUser() user: any) {
+  getAddress(@GetUser() user: getUser) {
     return this.storeService.getAddress(user);
   }
 
   @Post('sender')
-  createSender(@GetUser() user: any, @Body() body: CreateSenderDto) {
+  createSender(@GetUser() user: getUser, @Body() body: CreateSenderDto) {
     return this.storeService.createSender(user, body);
   }
 
   @Get('sender/verify/:id')
-  verifySender(@GetUser() user: any, @Param('id') id: string) {
+  verifySender(@GetUser() user: getUser, @Param('id') id: string) {
     return this.storeService.verifySender(user, id);
   }
 
@@ -55,57 +47,51 @@ export class StoreController {
   }
 
   @Post('email-key')
-  storeEmailAndKey(@GetUser() user: any, @Body() body: EmailAndKeyDto) {
+  storeEmailAndKey(@GetUser() user: getUser, @Body() body: EmailAndKeyDto) {
     return this.storeService.storeEmailAndKey(user, body);
   }
 
   @Get('email-key')
-  getEmailAndKey(@GetUser() user: any) {
+  getEmailAndKey(@GetUser() user: getUser) {
     return this.storeService.getEmailAndKey(user);
   }
 
   @Post('label-template')
-  saveLabelTemplate(@GetUser() user: any, @Body() body: SaveLabelTemplateDto) {
+  saveLabelTemplate(@GetUser() user: getUser, @Body() body: SaveLabelTemplateDto) {
     return this.storeService.saveLabelTemplate(user, body);
   }
 
   @Get('label-template/:type')
-  getLabelTemplate(@GetUser() user: any, @Param('type') type: string) {
+  getLabelTemplate(@GetUser() user: getUser, @Param('type') type: string) {
     return this.storeService.getLabelTemplate(user, type);
   }
 
   @Get('label-templates/both')
-  getBothLabelTemplate(@GetUser() user: any) {
+  getBothLabelTemplate(@GetUser() user: getUser) {
     return this.storeService.getBothLabelTemplate(user);
   }
 
-  @Post('label-template/create')
-  createLabelTemplate(
-    @GetUser() user: any,
-    @Body() body: CreateLabelTemplateDto,
-  ) {
+  @Post('createLabelTemplate')
+  createLabelTemplate(@GetUser() user: getUser, @Body() body: CreateLabelTemplateDto) {
     return this.storeService.createLabelTemplate(user, body);
   }
 
-  @Post('label-template/update')
-  updateLabelTemplate(
-    @GetUser() user: any,
-    @Body() body: UpdateLabelTemplateDto,
-  ) {
+  @Post('updateLabelTemplate')
+  updateLabelTemplate(@GetUser() user: getUser, @Body() body: UpdateLabelTemplateDto) {
     return this.storeService.updateLabelTemplate(user, body);
   }
 
-  @Get('getAllLabelTemplates')
-  getAllLabelTemplates(@GetUser() user: any, @Query() query: any) {
-    return this.storeService.getAllLabelTemplates(user, query);
+  @Get('getlabelTemplate/:type')
+  getAllLabelTemplates(@GetUser() user: getUser, @Param('type') type: string) {
+    return this.storeService.getAllLabelTemplates(user, type);
   }
 
-  @Get('label-template/by-id/:id')
-  getLabelTemplateById(@GetUser() user: any, @Param('id') id: number) {
+  @Get('getTemplate/:id')
+  getLabelTemplateById(@GetUser() user: getUser, @Param('id') id: number) {
     return this.storeService.getLabelTemplateById(user, id);
   }
 
-  @Delete('label-template/:id')
+  @Delete('deleteTemplate/:id')
   deleteLabelTemplate(@Param('id') id: number) {
     return this.storeService.deleteLabelTemplate(id);
   }

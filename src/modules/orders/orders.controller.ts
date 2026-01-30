@@ -80,7 +80,7 @@ export class OrdersController {
   }
 
   @Get('agentList/:type')
-  agentList(@GetUser() user: getUser, @Param('type') params: DTO.AgentTypeParamDto) {
+  agentList(@GetUser() user: getUser, @Param() params: DTO.AgentTypeParamDto) {
     return this.ordersService.agentList(user, params);
   }
 
@@ -109,7 +109,7 @@ export class OrdersController {
   }
 
   @Post('store-confirm/:orderId')
-  storeConfirm(@Param('orderId') param: DTO.OrderIdParamDto, @GetUser() user: getUser, @Body() body: any) {
+  storeConfirm(@Param() param: DTO.OrderIdParamDto, @GetUser() user: getUser, @Body() body: any) {
     return this.ordersService.storeConfirm(param, user, body);
   }
 
@@ -124,8 +124,8 @@ export class OrdersController {
     return this.ordersService.getVariantCost(body);
   }
 
-  @Get(':orderId/brands')
-  getPackageBrands(@GetUser() user: getUser, @Param() params: DTO.OrderIdParamDto, @Query() query: any) {
+  @Get(':orderId/brands/:status')
+  getPackageBrands(@GetUser() user: getUser, @Param() params: DTO.OrderIdStatusParamDto, @Query() query: any) {
     return this.ordersService.getPackageBrands(user, params, query);
   }
 
@@ -140,7 +140,7 @@ export class OrdersController {
   }
 
   @Post('totalItemCount/:orderId')
-  totalItemCount(@Param('orderId') param: DTO.OrderIdParamDto) {
+  totalItemCount(@Param() param: DTO.OrderIdParamDto) {
     return this.ordersService.totalItemCount(param);
   }
 

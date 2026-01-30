@@ -1,17 +1,35 @@
-import { IsNumber, IsString, IsArray, IsOptional, IsBoolean } from 'class-validator';
+import { IsArray, IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
+export class OrderIdParamDto {
+  @IsNotEmpty()
+  orderId: number | string;
+}
+class PaymentDetailsDto {
+  @IsNotEmpty()
+  @IsNumber()
+  amount: number;
+
+  @IsNotEmpty()
+  @IsString()
+  payment_method: string;
+
+  @IsNotEmpty()
+  payment_date: string;
+
+  @IsNotEmpty()
+  @IsNumber()
+  total_amount: number;
+
+  @IsNotEmpty()
+  @IsBoolean()
+  fullPayment: boolean;
+}
 export class MakePaymentDto {
   @IsNumber()
   packageOrderId: number;
 
-  @IsNumber()
-  received_amount: number;
-
-  @IsString()
-  payment_method: string;
-
-  @IsString()
-  payment_date: string;
+  @IsNotEmpty()
+  paymentDetails: PaymentDetailsDto;
 }
 
 export class RemovePaymentDto {
@@ -36,9 +54,6 @@ export class MakeShipmentDto {
 }
 
 export class CloseOrderDto {
-  @IsString()
-  pDate: string;
-
   @IsString()
   @IsOptional()
   storeId?: string;

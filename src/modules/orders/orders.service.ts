@@ -41,7 +41,7 @@ export class OrdersService {
   /**
    * @description Get package order detail by order ID (2 APIs)
    */
-  async getPackageBrands(user: getUser, params: DTO.OrderIdParamDto, query: any) {
+  async getPackageBrands(user: getUser, params: DTO.OrderIdStatusParamDto, query: any) {
     try {
       const { orderId } = params;
       const { userId, roleName } = user;
@@ -55,7 +55,11 @@ export class OrdersService {
           : await this.pkgRepo.packageCustomerModel.findOne({
               where: { package_id: orderId, customer_id: userId },
             });
-        if (!linked) throw new BadRequestException(AllMessages.PAKG_NF);
+        if (!linked)
+          throw new BadRequestException({
+            message: AllMessages.PAKG_NF,
+            success: false,
+          });
       }
 
       // 🔁 Dynamically choose models
@@ -68,7 +72,11 @@ export class OrdersService {
       ) as any;
 
       const packageOrder = await OrderModelRef.findByPk(orderId);
-      if (!packageOrder) throw new BadRequestException(AllMessages.PAKG_NF);
+      if (!packageOrder)
+        throw new BadRequestException({
+          message: AllMessages.PAKG_NF,
+          success: false,
+        });
 
       const findUser = (id?: number) =>
         id
@@ -86,13 +94,19 @@ export class OrdersService {
       // 🚫 Role-based restrictions
       if (roleName === 'Consumer') {
         if (packageOrder.isManualOrder && packageOrder.status === PACKAGE_STATUS.IN_PROGRESS) {
-          throw new BadRequestException(AllMessages.PAKG_NF);
+          throw new BadRequestException({
+            message: AllMessages.PAKG_NF,
+            success: false,
+          });
         }
       } else if (
         // for Admin or any non-consumer role
         packageOrder.status === PACKAGE_STATUS.DRAFT
       ) {
-        throw new BadRequestException(AllMessages.PAKG_NF);
+        throw new BadRequestException({
+          message: AllMessages.PAKG_NF,
+          success: false,
+        });
       }
 
       // const isSelectedFilterRequired =
@@ -167,7 +181,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ getPackageBrands error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -218,7 +235,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.log('errr in accesslist-> ', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -304,14 +324,17 @@ export class OrdersService {
       };
     } catch (err) {
       console.log('err in allorders-> ', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
   /**
    * @description Get all orders of store for admin
    */
-  async storeOrders(user: getUser, body: any) {
+  async storeOrders(user: getUser, body: DTO.GetOrdersDto) {
     try {
       const { storeId } = user;
       const {
@@ -509,15 +532,17 @@ export class OrdersService {
         }
       }
 
-      const data = Object.values(grouped).map((order: any) => {
-        const totalReceived = order.payments?.reduce((sum, p) => sum + (p.received_amount || 0), 0) || 0;
+      const data = Object.values(grouped)
+        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .map((order: any) => {
+          const totalReceived = order.payments?.reduce((sum, p) => sum + (p.received_amount || 0), 0) || 0;
 
-        return {
-          ...order,
-          totalReceived,
-          pending: (order.total_amount || 0) - totalReceived,
-        };
-      });
+          return {
+            ...order,
+            totalReceived,
+            pending: (order.total_amount || 0) - totalReceived,
+          };
+        });
 
       return {
         success: true,
@@ -531,7 +556,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.log('err', err);
-      throw new BadRequestException('Something went wrong');
+      throw new BadRequestException({
+        message: 'Something went wrong',
+        success: false,
+      });
     }
   }
 
@@ -562,7 +590,11 @@ export class OrdersService {
       const packageOrderData = await OrderModel.findByPk(orderId, {
         attributes: ['status'],
       });
-      if (!packageOrderData) throw new BadRequestException(AllMessages.PAKG_NF);
+      if (!packageOrderData)
+        throw new BadRequestException({
+          message: AllMessages.PAKG_NF,
+          success: false,
+        });
 
       const isInitiated =
         !isAccess &&
@@ -793,7 +825,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ getPackageBrandProducts error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -807,7 +842,11 @@ export class OrdersService {
       const packageOrderData = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
         attributes: ['status'],
       });
-      if (!packageOrderData) throw new BadRequestException('Package order not found');
+      if (!packageOrderData)
+        throw new BadRequestException({
+          message: 'Package order not found',
+          success: false,
+        });
 
       const includeArray = [
         {
@@ -1170,7 +1209,10 @@ export class OrdersService {
         );
       } else if (existingOrder.sales_agent_id !== userId) {
         if (t) await t.rollback();
-        throw new BadRequestException('You are not authorized to update this package.');
+        throw new BadRequestException({
+          message: 'You are not authorized to update this package.',
+          success: false,
+        });
       }
 
       // Update prices
@@ -1455,12 +1497,22 @@ export class OrdersService {
       if (!order) throw new BadRequestException(AllMessages.PAKG_NF);
 
       if (order.sales_agent_id != null && order.sales_agent_id !== user.userId) {
-        throw new BadRequestException('You are not authorized to initiate this package.');
+        throw new BadRequestException({
+          message: 'You are not authorized to initiate this package.',
+          success: false,
+        });
       }
-      if (order.status === PACKAGE_STATUS.INITIATED) throw new BadRequestException('Package is already initiated.');
+      if (order.status === PACKAGE_STATUS.INITIATED)
+        throw new BadRequestException({
+          message: 'Package is already initiated.',
+          success: false,
+        });
 
       if (order.status !== PACKAGE_STATUS.CREATED) {
-        throw new BadRequestException("Package status must be 'CREATED' or 'SUBMITTED' to initiate.");
+        throw new BadRequestException({
+          message: "Package status must be 'CREATED' or 'SUBMITTED' to initiate.",
+          success: false,
+        });
       }
 
       // ✅ Update package status & Assign initiator as sales agent
@@ -1508,9 +1560,16 @@ export class OrdersService {
         transaction: t,
       });
 
-      if (!existingOrder) throw new BadRequestException("Package status must be 'INITIATED' to send it for Review.");
+      if (!existingOrder)
+        throw new BadRequestException({
+          message: "Package status must be 'INITIATED' to send it for Review.",
+          success: false,
+        });
       if (existingOrder.sales_agent_id != null && existingOrder.sales_agent_id !== user.userId) {
-        throw new BadRequestException('You are not authorized to mark this package for Review.');
+        throw new BadRequestException({
+          message: 'You are not authorized to mark this package for Review.',
+          success: false,
+        });
       }
 
       existingOrder.status = PACKAGE_STATUS.IN_REVIEW;
@@ -1589,7 +1648,10 @@ export class OrdersService {
 
       if (order.status !== PACKAGE_STATUS.IN_REVIEW) {
         await transaction.rollback();
-        throw new BadRequestException('Order is not in review.');
+        throw new BadRequestException({
+          message: 'Order is not in review.',
+          success: false,
+        });
       }
 
       const { store_id } = order;
@@ -1756,7 +1818,10 @@ export class OrdersService {
       }
 
       if (!Array.isArray(brandIds) || brandIds.length === 0) {
-        throw new BadRequestException('Brand IDs array is required');
+        throw new BadRequestException({
+          message: 'Brand IDs array is required',
+          success: false,
+        });
       }
 
       const brandsItemData = await this.pkgRepo.packageBrandItemsModel.findAll({
@@ -2293,7 +2358,15 @@ export class OrdersService {
       await order.save({ transaction });
 
       // Mark inventory as sold
-      await this.MarkInventorySold.markSoldInventory(orderId, confirmDate, storeId, userId, roleId, token, transaction);
+      await this.MarkInventorySold.markSoldInventory(
+        Number(orderId),
+        confirmDate,
+        storeId,
+        userId,
+        roleId,
+        token,
+        transaction,
+      );
 
       await transaction.commit();
 
@@ -2315,12 +2388,20 @@ export class OrdersService {
     }
   }
 
+  /**
+   * @description Check stock availability before save
+   * @param body
+   * @returns
+   */
   async checkStock(body: DTO.CheckStockDto) {
     try {
       const { items = [] } = body;
 
       if (!Array.isArray(items) || items.length === 0) {
-        throw new BadRequestException('Items array is required.');
+        throw new BadRequestException({
+          message: 'Items array is required.',
+          success: false,
+        });
       }
 
       const outOfStock: any[] = [];
@@ -2329,7 +2410,10 @@ export class OrdersService {
         const { productMainId, variants = [] } = item;
 
         if (!productMainId) {
-          throw new BadRequestException('Product id is required.');
+          throw new BadRequestException({
+            message: 'Product id is required.',
+            success: false,
+          });
         }
 
         // ✅ Trim all incoming variant sizes
@@ -2338,7 +2422,7 @@ export class OrdersService {
         // ✅ Fetch DB variants (trim DB side using Sequelize.fn)
         const dbVariants = await this.productRepo.variantModel.findAll({
           where: {
-            productId: productMainId,
+            product_id: productMainId,
             status: 1,
             quantity: { [Op.gt]: 0 },
             [Op.and]: [
@@ -2410,7 +2494,7 @@ export class OrdersService {
 
       const variants = await this.productRepo.variantModel.findAll({
         where: {
-          productId,
+          product_id: productId,
           status: 1,
           quantity: { [Op.gt]: 0 },
           [Op.and]: [
@@ -2468,7 +2552,10 @@ export class OrdersService {
       });
 
       if (!orderData || !orderData.items || orderData.items.length === 0) {
-        throw new BadRequestException('Order item not found.');
+        throw new BadRequestException({
+          message: 'Order item not found.',
+          success: false,
+        });
       }
 
       const itemId = orderData.items[0].id;

@@ -20,15 +20,17 @@ export class StoreService {
 
   async addAddress(user: any, body: any) {
     if (!this.storeRepo.storeModel.sequelize)
-      throw new BadRequestException('Sequelize not initialized');
+      throw new BadRequestException({
+        message: 'Sequelize not initialized',
+        success: false,
+      });
     const transaction = await this.storeRepo.storeModel.sequelize.transaction();
     try {
       const { storeId } = user;
       const { storeAddress, shippingAddress = [] } = body;
 
       if (storeAddress) {
-        const { s_country, s_address, s_address2, s_city, s_state, s_zip } =
-          storeAddress;
+        const { s_country, s_address, s_address2, s_city, s_state, s_zip } = storeAddress;
         await this.storeRepo.storeLocationMappingModel.update(
           {
             country: s_country,
@@ -74,18 +76,20 @@ export class StoreService {
       return { success: true, message: 'Address(es) saved successfully' };
     } catch (err) {
       await transaction.rollback();
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
   async getAddress(user: any) {
     try {
       const { storeId } = user;
-      const storeAddress =
-        await this.storeRepo.storeLocationMappingModel.findOne({
-          where: { store_id: storeId, default_store_location: true },
-          raw: true,
-        });
+      const storeAddress = await this.storeRepo.storeLocationMappingModel.findOne({
+        where: { store_id: storeId, default_store_location: true },
+        raw: true,
+      });
       const shippingAddress = await this.storeRepo.storeAddressModel.findAll({
         where: { storeId },
         raw: true,
@@ -96,7 +100,10 @@ export class StoreService {
         message: AllMessages.ADDR_FTCH,
       };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -133,14 +140,14 @@ export class StoreService {
 
       return {
         success: true,
-        message:
-          'Verification email sent. Please check your inbox and verify within 24 hours.',
+        message: 'Verification email sent. Please check your inbox and verify within 24 hours.',
         senderId: responseBody.id,
       };
     } catch (err) {
-      throw new BadRequestException(
-        err.response?.body?.errors?.[0]?.message || AllMessages.SMTHG_WRNG,
-      );
+      throw new BadRequestException({
+        message: err.response?.body?.errors?.[0]?.message || AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -152,12 +159,13 @@ export class StoreService {
         url: '/v3/verified_senders',
       };
       const [response, body]: any = await sgClient.request(request);
-      const sender = body?.results?.find(
-        (s: any) => String(s.id) === String(senderId),
-      );
+      const sender = body?.results?.find((s: any) => String(s.id) === String(senderId));
 
       if (!sender) {
-        throw new BadRequestException('Sender not found in SendGrid.');
+        throw new BadRequestException({
+          message: 'Sender not found in SendGrid.',
+          success: false,
+        });
       }
 
       if (!sender.verified) {
@@ -178,9 +186,10 @@ export class StoreService {
         data: sender,
       };
     } catch (err) {
-      throw new BadRequestException(
-        err.response?.body?.errors?.[0]?.message || err.message,
-      );
+      throw new BadRequestException({
+        message: err.response?.body?.errors?.[0]?.message || err.message,
+        success: false,
+      });
     }
   }
 
@@ -198,7 +207,10 @@ export class StoreService {
         data: body,
       };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -212,7 +224,10 @@ export class StoreService {
       );
       return { success: true, message: AllMessages.SENDGRID_API };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -223,10 +238,17 @@ export class StoreService {
         where: { store_id: storeId },
         attributes: ['sendgridApiKey', 'sendgridFromEmail'],
       });
-      if (!store) throw new BadRequestException('Store not found.');
+      if (!store)
+        throw new BadRequestException({
+          message: 'Store not found.',
+          success: false,
+        });
       return { success: true, data: store };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -248,7 +270,10 @@ export class StoreService {
       }
       return { success: true, message: AllMessages.LBL_SVD };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -259,14 +284,21 @@ export class StoreService {
       });
       return { success: true, data: labels };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
   async getBothLabelTemplate(user: any) {
     try {
       const store = await this.storeRepo.storeModel.findByPk(user.storeId);
-      if (!store) throw new BadRequestException('Store not found.');
+      if (!store)
+        throw new BadRequestException({
+          message: 'Store not found.',
+          success: false,
+        });
       const anyStore = store as any;
       return {
         success: true,
@@ -278,7 +310,10 @@ export class StoreService {
         },
       };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -286,10 +321,17 @@ export class StoreService {
     try {
       const { storeId } = user;
       const { name, templateData, label, type } = body;
+
       const existing = await this.productRepo.labelModel.findOne({
         where: { store_id: storeId, label_name: name },
       });
-      if (existing) throw new BadRequestException(AllMessages.LBL_EXST);
+
+      if (existing)
+        throw new BadRequestException({
+          message: AllMessages.LBL_EXST,
+          success: false,
+        });
+
       await this.productRepo.labelModel.create({
         store_id: storeId,
         label_name: name + ' ' + type,
@@ -297,9 +339,14 @@ export class StoreService {
         label_template: templateData,
         template_type: type,
       });
+
       return { success: true, message: AllMessages.LBL_SVD };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      console.error('❌ createLabelTemplate error:', err);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -310,7 +357,11 @@ export class StoreService {
       const dbLabel = await this.productRepo.labelModel.findOne({
         where: { store_id: storeId, id },
       });
-      if (!dbLabel) throw new BadRequestException('Label not found.');
+      if (!dbLabel)
+        throw new BadRequestException({
+          message: 'Label not found.',
+          success: false,
+        });
       dbLabel.label_name = name;
       dbLabel.label_dimension = label;
       dbLabel.label_template = templateData;
@@ -318,7 +369,10 @@ export class StoreService {
       await dbLabel.save();
       return { success: true, message: AllMessages.LBL_UPDT };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -326,19 +380,19 @@ export class StoreService {
     try {
       const { search = '', page = 1, limit = 10, type } = query;
       const offset = (Number(page) - 1) * Number(limit);
-      const whereCondition: any = { store_id: user.storeId };
+      const whereCondition: any = { store_id: user.storeId, deleted_at: null };
+
       if (search) whereCondition.label_name = { [Op.like]: `%${search}%` };
+
       if (type) whereCondition.template_type = type;
 
-      const { rows, count } = await this.productRepo.labelModel.findAndCountAll(
-        {
-          where: whereCondition,
-          limit: Number(limit),
-          offset,
-          attributes: ['id', 'label_name', 'label_dimension', 'template_type'],
-          order: [['id', 'DESC']],
-        },
-      );
+      const { rows, count } = await this.productRepo.labelModel.findAndCountAll({
+        where: whereCondition,
+        limit: Number(limit),
+        offset,
+        attributes: ['id', 'label_name', 'label_dimension', 'template_type'],
+        order: [['id', 'DESC']],
+      });
 
       return {
         success: true,
@@ -350,7 +404,11 @@ export class StoreService {
         },
       };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      console.log('err', err);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -359,10 +417,17 @@ export class StoreService {
       const label = await this.productRepo.labelModel.findOne({
         where: { store_id: user.storeId, id },
       });
-      if (!label) throw new BadRequestException('Label not found.');
+      if (!label)
+        throw new BadRequestException({
+          message: 'Label not found.',
+          success: false,
+        });
       return { success: true, data: label };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 
@@ -372,11 +437,17 @@ export class StoreService {
         where: { [Op.or]: [{ display_label_id: id }, { item_label_id: id }] },
       });
       if (assigned)
-        throw new BadRequestException('Assigned label cannot be deleted.');
+        throw new BadRequestException({
+          message: 'Assigned label cannot be deleted.',
+          success: false,
+        });
       await this.productRepo.labelModel.destroy({ where: { id } });
       return { success: true, message: AllMessages.LBL_DLT };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
     }
   }
 }

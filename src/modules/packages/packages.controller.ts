@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/common/constants/permissions';
 import { AgentType } from 'src/common/decorators/agent-type.decorator';
@@ -16,6 +8,7 @@ import type { getUser } from 'src/common/interfaces/common/getUser';
 import { AgentGuard } from '../../common/guards/agent.guard';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
+import * as DTO from './dto/packages.dto';
 import {
   CloseOrderDto,
   CustomInvoiceDto,
@@ -36,29 +29,20 @@ export class PackagesController {
 
   @Post('payment')
   @AgentType('is_logistic_agent', true)
-  @RequiredPermissions(
-    PERMISSIONS.ReadyToProccess.name,
-    PERMISSIONS.Completed.name,
-  )
+  @RequiredPermissions(PERMISSIONS.ReadyToProccess.name, PERMISSIONS.Completed.name)
   makePayment(@GetUser() user: getUser, @Body() body: MakePaymentDto) {
     return this.packagesService.makePayment(user, body);
   }
 
   @Get('paymentDetail/:orderId')
   @AgentType('is_logistic_agent', true)
-  @RequiredPermissions(
-    PERMISSIONS.ReadyToProccess.name,
-    PERMISSIONS.Completed.name,
-  )
+  @RequiredPermissions(PERMISSIONS.ReadyToProccess.name, PERMISSIONS.Completed.name)
   paymentDetail(@Param('orderId') orderId: number) {
     return this.packagesService.paymentDetail(orderId);
   }
 
   @Post('removePayment')
-  @RequiredPermissions(
-    PERMISSIONS.ReadyToProccess.name,
-    PERMISSIONS.Completed.name,
-  )
+  @RequiredPermissions(PERMISSIONS.ReadyToProccess.name, PERMISSIONS.Completed.name)
   removePayment(@Body() body: RemovePaymentDto) {
     return this.packagesService.removePayment(body);
   }
@@ -80,12 +64,8 @@ export class PackagesController {
   @Post('closeOrder/:orderId')
   @AgentType('is_logistic_agent')
   @RequiredPermissions(PERMISSIONS.ReadyToProccess.name)
-  closeOrder(
-    @GetUser() user: any,
-    @Param('orderId') orderId: number,
-    @Body() body: CloseOrderDto,
-  ) {
-    return this.packagesService.closeOrder(user, orderId, body);
+  closeOrder(@GetUser() user: any, @Param() params: DTO.OrderIdParamDto, @Body() body: CloseOrderDto) {
+    return this.packagesService.closeOrder(user, params, body);
   }
 
   @Get('itemReceived/:itemId')
@@ -124,11 +104,7 @@ export class PackagesController {
   }
 
   @Post('completePkg/:orderId')
-  completePkg(
-    @GetUser() user: any,
-    @Param('orderId') orderId: number,
-    @Body() body: CloseOrderDto,
-  ) {
+  completePkg(@GetUser() user: any, @Param('orderId') orderId: number, @Body() body: CloseOrderDto) {
     return this.packagesService.completePkg(user, orderId, body);
   }
 

@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsIn,
@@ -18,8 +18,16 @@ import { PACKAGE_STATUS, PAYMENT_STATUS } from 'src/common/constants/enum';
 
 export class OrderIdParamDto {
   @IsNotEmpty()
-  @IsNumber()
-  orderId: number;
+  orderId: number | string;
+}
+
+export class OrderIdStatusParamDto {
+  @IsNotEmpty()
+  orderId: number | string;
+
+  @IsOptional()
+  @IsIn(Object.values(PACKAGE_STATUS))
+  status: PACKAGE_STATUS;
 }
 export class saveAsDraftDto {
   @IsNotEmpty()
@@ -57,36 +65,44 @@ export class AccessListDto {
 /* -------------------- GET ORDERS -------------------- */
 
 export class GetOrdersDto {
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
   @IsIn(Object.values(PACKAGE_STATUS))
   status?: PACKAGE_STATUS;
 
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
   @IsIn(Object.values(PAYMENT_STATUS))
   paymentStatus?: PAYMENT_STATUS;
 
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
   @IsInt()
   customerId?: number;
 
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
   @IsInt()
   salesAgentId?: number;
 
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
   @IsInt()
-  logisticsAgentId?: number;
+  logisticAgentId?: number;
 
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
   @IsString()
   search?: string;
 
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   page?: number;
 
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -94,10 +110,12 @@ export class GetOrdersDto {
   @Max(10000)
   limit?: number;
 
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
   @IsISO8601()
   sDate?: string;
 
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
   @IsISO8601()
   eDate?: string;
@@ -181,12 +199,10 @@ export class AssignSalesAgentDto {
 
 export class SetItemPriceDto {
   @IsNotEmpty()
-  @IsNumber()
-  packageOrderId: number;
+  packageOrderId: number | string;
 
   @IsNotEmpty()
-  @IsNumber()
-  packageBrandId: number;
+  packageBrandId: number | string;
 
   @IsOptional()
   @IsArray()
@@ -197,7 +213,6 @@ export class SetItemPriceDto {
   items?: any[];
 
   @IsOptional()
-  @IsArray()
   isSearch?: Boolean;
 }
 
@@ -225,12 +240,10 @@ export class CreateManualOrderDto {
 
 export class ParamOrderIdBrandIdDto {
   @IsNotEmpty()
-  @IsNumber()
-  orderId: number;
+  orderId: number | string;
 
   @IsNotEmpty()
-  @IsNumber()
-  brandId: number;
+  brandId: number | string;
 }
 
 /* -------------------- START ORDER PROCESS -------------------- */

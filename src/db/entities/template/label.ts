@@ -1,14 +1,8 @@
-import {
-  AutoIncrement,
-  Column,
-  DataType,
-  Model,
-  PrimaryKey,
-  Table,
-} from 'sequelize-typescript';
+import { AutoIncrement, Column, DataType, Model, PrimaryKey, Table } from 'sequelize-typescript';
 import { LABEL_TYPES } from 'src/common/constants/enum';
 
 @Table({
+  tableName: 'labels',
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
