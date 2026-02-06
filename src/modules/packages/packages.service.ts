@@ -1111,6 +1111,7 @@ export class PackagesService {
         prefix: 'INV',
         model: this.pkgRepo.invoiceModel,
         fieldName: 'invoice_number',
+        draft: false,
         transaction: t,
       });
 

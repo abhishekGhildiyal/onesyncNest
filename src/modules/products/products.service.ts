@@ -688,6 +688,7 @@ export class ProductsService {
         storeId,
         prefix: 'PKG',
         model: this.pkgRepo.accessPackageOrderModel,
+        draft: false,
         transaction: t,
       });
 

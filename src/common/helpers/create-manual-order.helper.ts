@@ -68,6 +68,7 @@ export class ManualOrderHelperService {
       storeId: store.store_id,
       prefix: store.store_code,
       model: this.pkgRepo.packageOrderModel,
+      draft: false,
       transaction: t,
     });
 

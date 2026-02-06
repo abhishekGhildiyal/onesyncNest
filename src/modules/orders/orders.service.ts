@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import type { getUser } from 'src/common/interfaces/common/getUser';
 import { ORDER_ITEMS, PACKAGE_STATUS, PAYMENT_STATUS } from '../../common/constants/enum';
@@ -9,6 +9,7 @@ import { MailService } from '../mail/mail.service';
 
 import { ROLES } from 'src/common/constants/permissions';
 import { ManualOrderHelperService } from 'src/common/helpers/create-manual-order.helper';
+import { generateOrderId } from 'src/common/helpers/order-generator.helper';
 import { SaveOrderAsDraftHelper } from 'src/common/helpers/save-order-as-draft.helper';
 import { MarkInventorySold } from 'src/common/helpers/sold-inventory.helper';
 import { PackageRepository } from 'src/db/repository/package.repository';
@@ -189,6 +190,306 @@ export class OrdersService {
   }
 
   /**
+   * @description Get Brand Products (for both seller & consumer)
+   */
+  // 11 july new changes (dynamic quantity)
+  async getPackageBrandProducts(params: any, query: any) {
+    try {
+      const { orderId, brandId } = params;
+      const isAccess = query.access === 'true';
+
+      const OrderModel: any = isAccess ? this.pkgRepo.accessPackageOrderModel : this.pkgRepo.packageOrderModel;
+
+      const BrandItemsModel: any = isAccess
+        ? this.pkgRepo.accessPackageBrandItemsModel
+        : this.pkgRepo.packageBrandItemsModel;
+
+      const BrandItemsCapacityModel: any = isAccess
+        ? this.pkgRepo.accessPackageBrandItemsCapacityModel
+        : this.pkgRepo.packageBrandItemsCapacityModel;
+
+      const BrandItemsQtyModel: any = isAccess
+        ? this.pkgRepo.accessPackageBrandItemsQtyModel
+        : this.pkgRepo.packageBrandItemsQtyModel;
+
+      // Fetch order to check status
+      const packageOrderData = await OrderModel.findByPk(orderId, {
+        attributes: ['status'],
+      });
+      if (!packageOrderData)
+        throw new BadRequestException({
+          message: AllMessages.PAKG_NF,
+          success: false,
+        });
+
+      const isInitiated =
+        !isAccess &&
+        packageOrderData.status !== PACKAGE_STATUS.SUBMITTED &&
+        packageOrderData.status !== PACKAGE_STATUS.DRAFT;
+
+      // ✅ when only 1 item sold and qty bcom 0 it disapear
+      const showDemandStatuses = [
+        // PACKAGE_STATUS.CONFIRM,
+        PACKAGE_STATUS.STORE_CONFIRM,
+        PACKAGE_STATUS.IN_PROGRESS,
+        PACKAGE_STATUS.COMPLETED,
+        PACKAGE_STATUS.CLOSE,
+      ];
+
+      const showDemand = showDemandStatuses.includes(packageOrderData.status);
+
+      // Build include array dynamically
+      const includeArray: any[] = [
+        {
+          model: this.productRepo.productListModel,
+          as: 'products',
+          attributes: ['product_id', 'itemName', 'image', 'skuNumber'],
+          include: [
+            {
+              model: this.productRepo.brandModel,
+              as: 'brandData',
+              attributes: ['brandName'],
+            },
+            ...(isAccess
+              ? [
+                  {
+                    model: this.productRepo.variantModel,
+                    where: { status: 1, quantity: { [Op.gt]: 0 } },
+                    as: 'variants',
+                    attributes: ['id', 'option1Value', 'quantity', 'price', 'accountType', 'cost', 'payout'],
+                  },
+                ]
+              : []),
+          ],
+        },
+      ];
+
+      if (!isAccess) {
+        includeArray.push(
+          {
+            model: this.pkgRepo.packageBrandItemsCapacityModel,
+            as: 'capacities',
+            attributes: ['id', 'variant_id', 'item_id', 'maxCapacity', 'selectedCapacity'],
+            include: [
+              {
+                model: this.productRepo.variantModel,
+                where: { status: 1, quantity: { [Op.gt]: 0 } },
+                as: 'variant',
+                attributes: ['id', 'option1Value', 'quantity', 'price', 'accountType', 'cost', 'payout'],
+              },
+            ],
+          },
+          {
+            model: this.pkgRepo.packageBrandItemsQtyModel,
+            as: 'sizeQuantities',
+            attributes: ['variant_size', 'item_id', 'maxCapacity', 'selectedCapacity', 'shortage', 'receivedQuantity'],
+          },
+        );
+      }
+
+      // Fetch products for this brand
+      const packageItems = await BrandItemsModel.findAll({
+        where: { packageBrand_id: brandId },
+        include: includeArray,
+      });
+
+      const result: any[] = [];
+
+      for (const item of packageItems) {
+        const product = item.products;
+        if (!product) continue;
+
+        const hasVariants = isAccess
+          ? product.variants && product.variants.length > 0
+          : (item.capacities && item.capacities.length > 0) || (item.sizeQuantities && item.sizeQuantities.length > 0);
+        // ---------------------
+        // if (!hasVariants) continue; // skip if no variants and NO demand records found? (or no stock?) --- new change to show if demand exists even if no stock variants
+
+        const brandName = product.brandData?.brandName || 'Unknown';
+
+        const sizeAndQuantity: any = {};
+        const consumerDemand: any = {};
+        const variants: any[] = [];
+
+        if (!isAccess) {
+          // Normal mode: capacities
+          for (const cap of item.capacities || []) {
+            const variant = cap.variant;
+            if (!variant) continue;
+
+            const size = (variant.option1Value || 'Unknown').trim();
+            const stockQty = variant.quantity || 0;
+
+            const price =
+              variant.accountType === '1' ? variant.cost || 0 : variant.accountType === '0' ? variant.payout || 0 : 0;
+
+            variants.push({
+              id: variant.id,
+              option1: 'Size',
+              option1Value: size,
+              total_quantity: cap.maxCapacity || 0,
+              stock_quantity: stockQty,
+              price,
+            });
+
+            if (!sizeAndQuantity[size])
+              sizeAndQuantity[size] = {
+                quantity: 0,
+                demand: 0,
+                shortage: 0,
+                receivedQuantity: 0,
+                totalCost: 0,
+              };
+
+            sizeAndQuantity[size].quantity += stockQty;
+            sizeAndQuantity[size].totalCost += stockQty * price;
+          }
+
+          // Quantities / consumer demand
+          let totalSelectedCapacity = 0;
+          for (const qty of item.sizeQuantities || []) {
+            // if (qty.maxCapacity === 0) continue;
+
+            const size = (qty.variant_size || 'Unknown').trim();
+            const selected = qty.selectedCapacity || 0;
+            totalSelectedCapacity += selected;
+            consumerDemand[size] = selected;
+
+            if (!sizeAndQuantity[size])
+              sizeAndQuantity[size] = {
+                quantity: 0,
+                demand: 0,
+                shortage: 0,
+                receivedQuantity: 0,
+                totalCost: 0,
+              };
+
+            sizeAndQuantity[size].demand += selected;
+            sizeAndQuantity[size].shortage += qty.shortage || 0;
+            sizeAndQuantity[size].receivedQuantity += qty.receivedQuantity !== null ? qty.receivedQuantity : selected;
+          }
+
+          if (isInitiated && totalSelectedCapacity === 0) continue;
+        } else {
+          // Access mode
+          for (const variant of product.variants || []) {
+            const size = (variant.option1Value || 'Unknown').trim();
+            const stockQty = variant.quantity || 0;
+
+            variants.push({
+              id: variant.id,
+              option1: 'Size',
+              option1Value: size,
+              total_quantity: stockQty,
+              stock_quantity: stockQty,
+            });
+
+            if (!sizeAndQuantity[size])
+              sizeAndQuantity[size] = {
+                quantity: 0,
+                demand: 0,
+                shortage: 0,
+                receivedQuantity: 0,
+              };
+            sizeAndQuantity[size].quantity += stockQty;
+          }
+
+          // Ensure demand/shortage/receivedQuantity = 0 for access mode
+          for (const size of Object.keys(sizeAndQuantity)) {
+            sizeAndQuantity[size].demand = 0;
+            sizeAndQuantity[size].shortage = 0;
+            sizeAndQuantity[size].receivedQuantity = 0;
+          }
+        }
+
+        const sortedVariants = sortSizes(variants);
+
+        // Map and filter sizeAndQuantity
+        const sortedSizeAndQuantity = sortSizes(
+          Object.entries(sizeAndQuantity),
+          // .filter(([_, obj]) => obj.quantity > 0)
+          // .filter(([_, obj]) => !isInitiated && obj.quantity > 0 && obj.demand > 0))
+        )
+          .map(([size, obj]) => {
+            const avgCost = obj.quantity > 0 ? obj.totalCost / obj.quantity : 0;
+            return {
+              size,
+              quantity: obj.quantity,
+              demand: obj.demand,
+              shortage: obj.shortage,
+              receivedQuantity: obj.receivedQuantity,
+              costPrice: avgCost,
+            };
+          })
+          .filter((entry) => {
+            // ✅ If showDemand (special statuses), show only demand>0
+            if (showDemand) {
+              return !isInitiated ? entry.quantity > 0 : entry.quantity > 0 && entry.demand > 0; // old with variant 0 hide after store confirm statues-------------------------
+              return entry.demand > 0;
+            }
+            // Otherwise, apply normal isInitiated logic
+            // ----------------------------------------------stripes for 0 quantity and < demand-------------
+            // return !isInitiated ? entry.quantity > 0 : entry.quantity > 0 && entry.demand > 0;  // old with variant 0 hide--------------
+            if (entry.demand > 0) return true; //----new----------
+
+            return !isInitiated && entry.quantity > 0;
+          });
+
+        // 🔥 REMOVE PRODUCT if all variants are filtered out // -----------------------new (rmv prdct) after store confirm
+        if (showDemand && sortedSizeAndQuantity.length === 0) {
+          continue;
+        }
+
+        // Step 2: Further filter based on showDemand
+
+        // if (
+        //     packageOrderData.status === PACKAGE_STATUS.COMPLETED &&
+        //     packageOrderData.status === PACKAGE_STATUS.IN_PROGRESS &&
+        //     packageOrderData.status === PACKAGE_STATUS.CLOSE
+        // ) {
+        //     // Completed: show only initiated-demand logic
+        //     sortedSizeAndQuantity = sortedSizeAndQuantity.filter((entry) => !isInitiated || entry.demand > 0);
+        // } else {
+        //     // Other statuses: meaningful data
+        //     sortedSizeAndQuantity = sortedSizeAndQuantity.filter(
+        //         (entry) => (!isInitiated || entry.demand > 0) && entry.quantity > 0
+        //     );
+        // }
+
+        result.push({
+          name: product?.itemName || 'Unnamed',
+          productMainId: product?.product_id,
+          product_id: item.id,
+          itemName: product?.itemName,
+          image: product?.image || null,
+          skuNumber: product?.skuNumber,
+          brand_id: item.packageBrand_id || item.id,
+          brandData: { brandName },
+          variants: sortedVariants,
+          sizeAndQuantity: sortedSizeAndQuantity,
+          price: item.price,
+          isItemReceived: item?.isItemReceived || null,
+          ...(isAccess ? {} : { consumerDemand }),
+        });
+      }
+
+      result.sort((a, b) => (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()));
+
+      return {
+        success: true,
+        message: AllMessages.FTCH_PRODUCTS,
+        data: result,
+      };
+    } catch (err) {
+      console.error('❌ getPackageBrandProducts error:', err);
+      throw new BadRequestException({
+        message: AllMessages.SMTHG_WRNG,
+        success: false,
+      });
+    }
+  }
+
+  /**
    * @description Get access list
    */
   async accessList(user: any, body: any) {
@@ -249,6 +550,7 @@ export class OrdersService {
     try {
       const { userId } = user;
       const { status, page = 1, limit = 10 } = body;
+
       const consumerStore = await this.pkgRepo.packageCustomerModel.findAll({
         where: { customer_id: userId },
         attributes: ['package_id'],
@@ -378,17 +680,18 @@ export class OrdersService {
           ],
         });
 
-        const data = rows.map((order) => {
-          const json: any = order.toJSON();
+        // Add customerCount by counting associated customers
+        const dataWithCustomerCount = rows.map((order) => {
+          const orderJSON: any = order.toJSON();
           return {
-            ...json,
-            customerCount: json.customers?.length || 0,
+            ...orderJSON,
+            customerCount: orderJSON.customers?.length || 0,
           };
         });
 
         return {
           success: true,
-          data,
+          data: dataWithCustomerCount,
           pagination: {
             total: count,
             totalPages: Math.ceil(count / Nlimit),
@@ -406,6 +709,10 @@ export class OrdersService {
       const whereCond: any = {
         store_id: storeId,
         status: { [Op.ne]: PACKAGE_STATUS.DRAFT },
+        // Exclude "in-progress + not manual"
+        // [Op.not]: {
+        //     [Op.and]: [{ status: PACKAGE_STATUS.IN_PROGRESS }, { isManualOrder: true }],
+        // },
       };
 
       if (search) {
@@ -424,7 +731,18 @@ export class OrdersService {
             break;
 
           case PACKAGE_STATUS.IN_PROGRESS:
-            whereCond[Op.or] = [{ status: PACKAGE_STATUS.IN_PROGRESS }];
+            whereCond[Op.or] = [
+              {
+                status: PACKAGE_STATUS.IN_PROGRESS,
+                // isManualOrder: false,
+              },
+              // {
+              //     status: PACKAGE_STATUS.CLOSE,
+              // },
+              // {
+              //     status: PACKAGE_STATUS.STORE_CONFIRM,
+              // },
+            ];
             break;
 
           case PACKAGE_STATUS.CONFIRM:
@@ -440,11 +758,7 @@ export class OrdersService {
         }
       }
 
-      /**
-       |----------------------------------------
-       | PAYMENT FILTER
-       |----------------------------------------
-       */
+      // 🧩 Payment filter condition
       let wherePayCond: any = {};
       let required = false;
 
@@ -463,6 +777,7 @@ export class OrdersService {
       if (paymentStatus === PAYMENT_STATUS.CONFIRMED) {
         whereCond.paymentStatus = PAYMENT_STATUS.CONFIRMED;
         wherePayCond.payment_method = { [Op.ne]: null };
+        required = false; // include all orders (even unpaid)
       }
 
       if (sDate && eDate) {
@@ -471,26 +786,28 @@ export class OrdersService {
         };
       }
 
-      /**
-       |----------------------------------------
-       | CUSTOMER FILTER
-       |----------------------------------------
-       */
+      // 🧩 Customer condition
       const whereCustCond: any = {};
       if (customerId) whereCustCond.customer_id = customerId;
 
-      const { rows, count } = await this.pkgRepo.packageOrderModel.findAndCountAll({
+      const { rows: packageOrders, count } = await this.pkgRepo.packageOrderModel.findAndCountAll({
         where: whereCond,
         limit: Nlimit,
         offset,
         order: [['createdAt', 'DESC']],
-        distinct: true,
-        raw: true,
-        nest: true,
+        attributes: {
+          exclude: ['updatedAt', 'store_id', 'received_amount'],
+        },
         include: [
+          {
+            model: this.storeRepo.storeModel,
+            as: 'store',
+            attributes: ['store_name', 'store_id'],
+          },
           {
             model: this.pkgRepo.packageCustomerModel,
             as: 'customers',
+            attributes: ['customer_id'],
             where: whereCustCond,
             required: !!customerId,
             include: [
@@ -502,23 +819,40 @@ export class OrdersService {
             ],
           },
           {
+            model: this.userRepo.userModel,
+            as: 'employee',
+            attributes: ['id', 'firstName', 'lastName'],
+            foreignKey: 'employee_id',
+          },
+          {
+            model: this.userRepo.userModel,
+            as: 'salesAgent',
+            attributes: ['id', 'firstName', 'lastName'],
+            foreignKey: 'sales_agent_id',
+          },
+          {
             model: this.pkgRepo.packagePaymentModel,
             as: 'payment',
             where: wherePayCond,
             required,
+            attributes: ['received_amount', 'payment_method', 'payment_date', 'total_amount'],
           },
         ],
+        distinct: true,
+        raw: true,
+        nest: true,
       });
 
       /**
        |----------------------------------------
        | GROUP PAYMENTS
+       | 🔢 Group by order id (since raw+nest flatten results)
        |----------------------------------------
        */
 
       const grouped: Record<number, any> = {};
 
-      for (const row of rows) {
+      for (const row of packageOrders) {
         if (!grouped[row.id]) grouped[row.id] = { ...row, payments: [] };
 
         // Payment can be a single object or an array depending on query/raw
@@ -532,15 +866,25 @@ export class OrdersService {
         }
       }
 
+      // 🧾 Calculate totals per order
       const data = Object.values(grouped)
         .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .map((order: any) => {
+          let total_amount = order.total_amount || order.payments?.[0]?.total_amount || 0;
+
           const totalReceived = order.payments?.reduce((sum, p) => sum + (p.received_amount || 0), 0) || 0;
+          const pending = (order.total_amount || 0) - totalReceived;
 
           return {
             ...order,
+            total_amount,
             totalReceived,
-            pending: (order.total_amount || 0) - totalReceived,
+            pending,
+            paymentHistory: order.payments?.map((p) => ({
+              date: p.payment_date,
+              amount: p.received_amount,
+              method: p.payment_method,
+            })),
           };
         });
 
@@ -555,278 +899,9 @@ export class OrdersService {
         },
       };
     } catch (err) {
-      console.log('err', err);
+      console.log('❌ storeOrders error:', err);
       throw new BadRequestException({
         message: 'Something went wrong',
-        success: false,
-      });
-    }
-  }
-
-  /**
-   * @description Get Brand Products (for both seller & consumer)
-   */
-  // 11 july new changes (dynamic quantity)
-  async getPackageBrandProducts(params: any, query: any) {
-    try {
-      const { orderId, brandId } = params;
-      const isAccess = query.access === 'true';
-
-      const OrderModel: any = isAccess ? this.pkgRepo.accessPackageOrderModel : this.pkgRepo.packageOrderModel;
-
-      const BrandItemsModel: any = isAccess
-        ? this.pkgRepo.accessPackageBrandItemsModel
-        : this.pkgRepo.packageBrandItemsModel;
-
-      const BrandItemsCapacityModel: any = isAccess
-        ? this.pkgRepo.accessPackageBrandItemsCapacityModel
-        : this.pkgRepo.packageBrandItemsCapacityModel;
-
-      const BrandItemsQtyModel: any = isAccess
-        ? this.pkgRepo.accessPackageBrandItemsQtyModel
-        : this.pkgRepo.packageBrandItemsQtyModel;
-
-      // Fetch order to check status
-      const packageOrderData = await OrderModel.findByPk(orderId, {
-        attributes: ['status'],
-      });
-      if (!packageOrderData)
-        throw new BadRequestException({
-          message: AllMessages.PAKG_NF,
-          success: false,
-        });
-
-      const isInitiated =
-        !isAccess &&
-        packageOrderData.status !== PACKAGE_STATUS.SUBMITTED &&
-        packageOrderData.status !== PACKAGE_STATUS.DRAFT;
-
-      // ✅ when only 1 item sold and qty bcom 0 it disapear
-      const showDemandStatuses = [
-        PACKAGE_STATUS.CONFIRM,
-        PACKAGE_STATUS.STORE_CONFIRM,
-        PACKAGE_STATUS.IN_PROGRESS,
-        PACKAGE_STATUS.COMPLETED,
-        PACKAGE_STATUS.CLOSE,
-      ];
-
-      const showDemand = showDemandStatuses.includes(packageOrderData.status);
-
-      // Build include array dynamically
-      const includeArray: any[] = [
-        {
-          model: this.productRepo.productListModel,
-          as: 'products',
-          attributes: ['product_id', 'itemName', 'image', 'skuNumber'],
-          include: [
-            {
-              model: this.productRepo.brandModel,
-              as: 'brandData',
-              attributes: ['brandName'],
-            },
-            ...(isAccess
-              ? [
-                  {
-                    model: this.productRepo.variantModel,
-                    where: { status: 1, quantity: { [Op.gt]: 0 } },
-                    as: 'variants',
-                    attributes: ['id', 'option1Value', 'quantity', 'price', 'accountType', 'cost', 'payout'],
-                  },
-                ]
-              : []),
-          ],
-        },
-      ];
-
-      if (!isAccess) {
-        includeArray.push(
-          {
-            model: this.pkgRepo.packageBrandItemsCapacityModel,
-            as: 'capacities',
-            attributes: ['id', 'variant_id', 'item_id', 'maxCapacity', 'selectedCapacity'],
-            include: [
-              {
-                model: this.productRepo.variantModel,
-                where: { status: 1, quantity: { [Op.gt]: 0 } },
-                as: 'variant',
-                attributes: ['id', 'option1Value', 'quantity', 'price', 'accountType', 'cost', 'payout'],
-              },
-            ],
-          },
-          {
-            model: this.pkgRepo.packageBrandItemsQtyModel,
-            as: 'sizeQuantities',
-            attributes: ['variant_size', 'item_id', 'maxCapacity', 'selectedCapacity', 'shortage', 'receivedQuantity'],
-          },
-        );
-      }
-
-      // Fetch products for this brand
-      const packageItems = await BrandItemsModel.findAll({
-        where: { packageBrand_id: brandId },
-        include: includeArray,
-      });
-
-      const result: any[] = [];
-
-      for (const item of packageItems) {
-        const product = item.products;
-        if (!product) continue;
-
-        const hasVariants = isAccess
-          ? product.variants && product.variants.length > 0
-          : (item.capacities && item.capacities.length > 0) || (item.sizeQuantities && item.sizeQuantities.length > 0);
-        if (!hasVariants) continue;
-
-        const brandName = product.brandData?.brandName || 'Unknown';
-        const sizeAndQuantity: any = {};
-        const consumerDemand: any = {};
-        const variants: any[] = [];
-
-        if (!isAccess) {
-          // Normal mode: capacities
-          for (const cap of item.capacities || []) {
-            const variant = cap.variant;
-            if (!variant) continue;
-            const size = (variant.option1Value || 'Unknown').trim();
-            const stockQty = variant.quantity || 0;
-
-            const price =
-              variant.accountType === '1' ? variant.cost || 0 : variant.accountType === '0' ? variant.payout || 0 : 0;
-
-            variants.push({
-              id: variant.id,
-              option1: 'Size',
-              option1Value: size,
-              total_quantity: cap.maxCapacity || 0,
-              stock_quantity: stockQty,
-              price,
-            });
-
-            if (!sizeAndQuantity[size])
-              sizeAndQuantity[size] = {
-                quantity: 0,
-                demand: 0,
-                shortage: 0,
-                receivedQuantity: 0,
-                totalCost: 0,
-              };
-            sizeAndQuantity[size].quantity += stockQty;
-            sizeAndQuantity[size].totalCost += stockQty * price;
-          }
-
-          // Quantities / consumer demand
-          let totalSelectedCapacity = 0;
-          for (const qty of item.sizeQuantities || []) {
-            // if (qty.maxCapacity === 0) continue;
-
-            const size = (qty.variant_size || 'Unknown').trim();
-            const selected = qty.selectedCapacity || 0;
-            totalSelectedCapacity += selected;
-            consumerDemand[size] = selected;
-
-            if (!sizeAndQuantity[size])
-              sizeAndQuantity[size] = {
-                quantity: 0,
-                demand: 0,
-                shortage: 0,
-                receivedQuantity: 0,
-                totalCost: 0,
-              };
-
-            sizeAndQuantity[size].demand += selected;
-            sizeAndQuantity[size].shortage += qty.shortage || 0;
-            sizeAndQuantity[size].receivedQuantity += qty.receivedQuantity !== null ? qty.receivedQuantity : selected;
-          }
-
-          if (isInitiated && totalSelectedCapacity === 0) continue;
-        } else {
-          // Access mode
-          for (const variant of product.variants || []) {
-            const size = (variant.option1Value || 'Unknown').trim();
-            const stockQty = variant.quantity || 0;
-
-            variants.push({
-              id: variant.id,
-              option1: 'Size',
-              option1Value: size,
-              total_quantity: stockQty,
-              stock_quantity: stockQty,
-            });
-
-            if (!sizeAndQuantity[size])
-              sizeAndQuantity[size] = {
-                quantity: 0,
-                demand: 0,
-                shortage: 0,
-                receivedQuantity: 0,
-              };
-            sizeAndQuantity[size].quantity += stockQty;
-          }
-
-          // Ensure demand/shortage/receivedQuantity = 0 for access mode
-          for (const size of Object.keys(sizeAndQuantity)) {
-            sizeAndQuantity[size].demand = 0;
-            sizeAndQuantity[size].shortage = 0;
-            sizeAndQuantity[size].receivedQuantity = 0;
-          }
-        }
-
-        const sortedVariants = sortSizes(variants);
-
-        // Map and filter sizeAndQuantity
-        const sortedSizeAndQuantity = sortSizes(
-          Object.entries(sizeAndQuantity),
-          // .filter(([_, obj]) => obj.quantity > 0)
-          // .filter(([_, obj]) => !isInitiated && obj.quantity > 0 && obj.demand > 0))
-        )
-          .map(([size, obj]) => {
-            const avgCost = obj.quantity > 0 ? obj.totalCost / obj.quantity : 0;
-            return {
-              size,
-              quantity: obj.quantity,
-              demand: obj.demand,
-              shortage: obj.shortage,
-              receivedQuantity: obj.receivedQuantity,
-              costPrice: avgCost,
-            };
-          })
-          .filter((entry) => {
-            // ✅ If showDemand (special statuses), show only demand>0
-            if (showDemand) return entry.demand > 0;
-
-            // Otherwise, apply normal isInitiated logic
-            return !isInitiated ? entry.quantity > 0 : entry.quantity > 0 && entry.demand > 0;
-          });
-
-        result.push({
-          name: product.itemName || 'Unnamed',
-          productMainId: product.product_id,
-          product_id: item.id,
-          itemName: product.itemName,
-          image: product.image || null,
-          skuNumber: product.skuNumber,
-          brand_id: item.packageBrand_id || item.id,
-          brandData: { brandName },
-          variants: sortedVariants,
-          sizeAndQuantity: sortedSizeAndQuantity,
-          price: item.price,
-          isItemReceived: item.isItemReceived || null,
-          ...(isAccess ? {} : { consumerDemand }),
-        });
-      }
-
-      result.sort((a, b) => (a.itemName || '').toLowerCase().localeCompare((b.itemName || '').toLowerCase()));
-
-      return {
-        success: true,
-        message: AllMessages.FTCH_PRODUCTS,
-        data: result,
-      };
-    } catch (err) {
-      console.error('❌ getPackageBrandProducts error:', err);
-      throw new BadRequestException({
-        message: AllMessages.SMTHG_WRNG,
         success: false,
       });
     }
@@ -895,7 +970,11 @@ export class OrdersService {
         include: includeArray,
       });
 
-      if (!packageOrder || packageOrder.length === 0) throw new BadRequestException(AllMessages.PAKG_NF);
+      if (!packageOrder || packageOrder.length === 0)
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.PAKG_NF,
+        });
 
       const result: any[] = [];
 
@@ -958,9 +1037,9 @@ export class OrdersService {
               totalCost: 0,
             };
           }
-          sizeAndQuantity[size].demand += selected;
-          sizeAndQuantity[size].shortage += qty.shortage || 0;
-          sizeAndQuantity[size].receivedQuantity += qty.receivedQuantity ?? selected;
+          sizeAndQuantity[size].demand = selected;
+          sizeAndQuantity[size].shortage = qty.shortage || 0;
+          sizeAndQuantity[size].receivedQuantity = qty.receivedQuantity ?? selected;
 
           consumerDemand[size] = selected;
         }
@@ -1014,8 +1093,12 @@ export class OrdersService {
         data: result,
       };
     } catch (err) {
+      console.error('❌ getPackageBrandProducts error:', err);
       if (err instanceof BadRequestException) throw err;
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -1128,7 +1211,10 @@ export class OrdersService {
     } catch (err) {
       if (t) await t.rollback();
       console.error('❌ updateVarientQuantity error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -1142,14 +1228,17 @@ export class OrdersService {
       for (const item of items || []) {
         const { itemId, totalQuantity, variants } = item;
 
-        await this.pkgRepo.packageBrandItemsModel.update({ consumerDemand: totalQuantity }, { where: { id: itemId } });
+        await this.pkgRepo.accessPackageBrandItemsModel.update(
+          { consumerDemand: totalQuantity },
+          { where: { id: itemId } },
+        );
 
         for (const variant of variants || []) {
           const { size, quantity } = variant;
 
           if (size === undefined || size === null) continue;
 
-          await this.pkgRepo.packageBrandItemsQtyModel.update(
+          await this.pkgRepo.accessPackageBrandItemsQtyModel.update(
             { selectedCapacity: quantity },
             {
               where: {
@@ -1166,7 +1255,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ updateVarientQuantity error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -1198,7 +1290,10 @@ export class OrdersService {
 
       if (!existingOrder) {
         if (t) await t.rollback();
-        throw new BadRequestException(AllMessages.INITD_REQ);
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.INITD_REQ,
+        });
       }
       const customer_id = existingOrder.customers.map((c) => c.customer_id);
 
@@ -1243,6 +1338,7 @@ export class OrdersService {
         if (!itemId) continue;
         itemTotalQuantity += totalQuantity;
 
+        // consumerDemand = total quantity
         itemUpdates.push(
           this.pkgRepo.packageBrandItemsModel.update(
             { consumerDemand: totalQuantity },
@@ -1252,6 +1348,7 @@ export class OrdersService {
 
         for (const variant of variants) {
           if (!variant?.size) continue;
+
           variantUpdates.push(
             this.pkgRepo.packageBrandItemsQtyModel.update(
               { selectedCapacity: variant.quantity },
@@ -1267,6 +1364,7 @@ export class OrdersService {
         }
       }
 
+      // ✅ Update PackageBrandModel.selected based on total quantity
       if (!isSearch) {
         await this.pkgRepo.packageBrandModel.update(
           { selected: itemTotalQuantity > 0 },
@@ -1277,6 +1375,7 @@ export class OrdersService {
         );
       }
 
+      //   Bulk update
       await Promise.all([...itemUpdates, ...variantUpdates]);
       await t.commit();
 
@@ -1292,7 +1391,10 @@ export class OrdersService {
     } catch (err) {
       if (t) await t.rollback();
       console.error('❌ setItemPrice error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -1324,7 +1426,10 @@ export class OrdersService {
       };
     } catch (err) {
       if (t) await t.rollback();
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -1360,7 +1465,7 @@ export class OrdersService {
           {
             model: this.storeRepo.storeModel,
             as: 'store',
-            attributes: ['store_name', 'store_id', 'store_icon'],
+            attributes: ['store_name', 'store_id', 'store_icon', 'store_code'],
           },
         ],
         transaction: t,
@@ -1376,8 +1481,24 @@ export class OrdersService {
         });
       }
 
+      if (!existingOrder.store) {
+        throw new BadRequestException({
+          success: false,
+          message: 'Store information not found for this order.',
+        });
+      }
+
       await this.pkgRepo.packageOrderModel.update(
-        { status: PACKAGE_STATUS.CREATED },
+        {
+          status: PACKAGE_STATUS.CREATED,
+          order_id: await generateOrderId({
+            storeId: existingOrder.store.store_id,
+            prefix: existingOrder.store.store_code,
+            model: this.pkgRepo.packageOrderModel,
+            draft: false,
+            transaction: t,
+          }),
+        },
         { where: { id: packageOrderId }, transaction: t },
       );
 
@@ -1475,9 +1596,12 @@ export class OrdersService {
         },
       };
     } catch (err) {
-      console.error('❌ orderCount error:', err);
+      console.error('❌ createManualOrder error:', err);
       if (t) await t.rollback();
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -1494,7 +1618,13 @@ export class OrdersService {
         transaction: t,
         lock: t.LOCK.UPDATE,
       });
-      if (!order) throw new BadRequestException(AllMessages.PAKG_NF);
+      if (!order) {
+        await t.rollback();
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.PAKG_NF,
+        });
+      }
 
       if (order.sales_agent_id != null && order.sales_agent_id !== user.userId) {
         throw new BadRequestException({
@@ -1510,7 +1640,7 @@ export class OrdersService {
 
       if (order.status !== PACKAGE_STATUS.CREATED) {
         throw new BadRequestException({
-          message: "Package status must be 'CREATED' or 'SUBMITTED' to initiate.",
+          message: "Package status must be 'SUBMITTED' to initiate.",
           success: false,
         });
       }
@@ -1529,7 +1659,10 @@ export class OrdersService {
       return { success: true, message: AllMessages.PKG_INITD_SUCCSS };
     } catch (err) {
       if (t) await t.rollback();
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -1565,6 +1698,7 @@ export class OrdersService {
           message: "Package status must be 'INITIATED' to send it for Review.",
           success: false,
         });
+
       if (existingOrder.sales_agent_id != null && existingOrder.sales_agent_id !== user.userId) {
         throw new BadRequestException({
           message: 'You are not authorized to mark this package for Review.',
@@ -1617,16 +1751,23 @@ export class OrdersService {
         );
       });
 
-      this.socketGateway.server.emit(`inReview-${orderId}`, {
-        message: 'Package marked for review',
-      });
+      //   this.socketGateway.server.emit(`inReview-${orderId}`, {
+      //     message: 'Package marked for review',
+      //   });
       return { success: true, message: AllMessages.PKG_REVW_SUCCSS };
     } catch (err) {
       if (t) await t.rollback();
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      console.error('❌ markReview error:', err);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
+  /**
+   * @description Mark order as confirm by consumer
+   */
   async confirmOrder(orderId: number, user: any, body: any, token: string) {
     let transaction;
     try {
@@ -1766,7 +1907,10 @@ export class OrdersService {
       return { success: true, message: AllMessages.ORDR_UPDTD };
     } catch (err) {
       console.error('❌ updateOrderBrands error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -1789,13 +1933,19 @@ export class OrdersService {
       });
 
       if (!orderItems || orderItems.length === 0) {
-        throw new BadRequestException(AllMessages.NO_ITEMS_FOUND);
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.NO_ITEMS_FOUND,
+        });
       }
 
       return { success: true, data: orderItems };
     } catch (err) {
       console.error('❌ getAllOrderItemsPrice error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -1814,7 +1964,10 @@ export class OrdersService {
       });
 
       if (!order) {
-        throw new BadRequestException(AllMessages.PAKG_NF);
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.PAKG_NF,
+        });
       }
 
       if (!Array.isArray(brandIds) || brandIds.length === 0) {
@@ -1832,7 +1985,7 @@ export class OrdersService {
             as: 'sizeQuantities',
             where: { selectedCapacity: { [Op.gt]: 0 } },
             required: true,
-            attributes: ['variant_size', 'selectedCapacity'],
+            attributes: ['variant_size', 'selectedCapacity', 'item_id'],
           },
           {
             model: this.pkgRepo.packageBrandItemsCapacityModel,
@@ -1861,48 +2014,109 @@ export class OrdersService {
       let disableReview = false;
       let hasPrice = false;
 
+      // Get order status to apply same filtering
+      const isInitiated = order.status !== PACKAGE_STATUS.SUBMITTED && order.status !== PACKAGE_STATUS.DRAFT;
+
+      // Statuses where we should only show items with demand > 0
+      const showDemandStatuses = [
+        PACKAGE_STATUS.CONFIRM,
+        PACKAGE_STATUS.STORE_CONFIRM,
+        PACKAGE_STATUS.IN_PROGRESS,
+        PACKAGE_STATUS.COMPLETED,
+        PACKAGE_STATUS.CLOSE,
+      ];
+
+      const showDemand = showDemandStatuses.includes(order.status as PACKAGE_STATUS);
+
       // when price is present in item table but sizeQty slected is 0
       for (const brandItem of brandsItemData) {
-        if (
-          !brandItem.sizeQuantities ||
-          brandItem.sizeQuantities?.length === 0 ||
-          brandItem.sizeQuantities?.[0]?.selectedCapacity === 0
-        ) {
+        const rawPrice = brandItem?.price; // can be null
+        const itemPrice = rawPrice === null ? 0 : Number(rawPrice);
+
+        // Build size and quantity map like in getPackageBrandProducts
+        const sizeAndQuantity = {};
+        let totalSelectedCapacity = 0;
+
+        // 1. Process capacities (stock quantities)
+        for (const cap of brandItem.capacities || []) {
+          const variant = cap.variant;
+          if (!variant) continue;
+
+          const size = (variant.option1Value || 'Unknown').trim();
+          const stockQty = variant.quantity || 0;
+
+          if (!sizeAndQuantity[size]) {
+            sizeAndQuantity[size] = {
+              quantity: 0,
+              demand: 0,
+            };
+          }
+          sizeAndQuantity[size].quantity += stockQty;
+        }
+
+        // 2. Process sizeQuantities (demand)
+        for (const qty of brandItem.sizeQuantities || []) {
+          const size = (qty.variant_size || 'Unknown').trim();
+          const selected = qty.selectedCapacity || 0;
+          totalSelectedCapacity += selected;
+
+          if (!sizeAndQuantity[size]) {
+            sizeAndQuantity[size] = {
+              quantity: 0,
+              demand: 0,
+            };
+          }
+          sizeAndQuantity[size].demand += selected;
+        }
+
+        // Apply the same filtering logic as getPackageBrandProducts
+        const filteredSizes = Object.entries(sizeAndQuantity).filter(([size, data]) => {
+          const typedData = data as { quantity: number; demand: number };
+          // ✅ If showDemand (special statuses), show only demand>0
+          if (showDemand) {
+            return !isInitiated ? typedData.quantity > 0 : typedData.quantity > 0 && typedData.demand > 0; // --------------- old with variant 0 hide after store confirm statues-------------------------
+
+            return typedData.demand > 0;
+          }
+
+          // Otherwise, apply normal isInitiated logic
+          return !isInitiated ? typedData.quantity > 0 : typedData.quantity > 0 && typedData.demand > 0;
+        });
+
+        // Skip if no filtered sizes after applying logic
+        if (filteredSizes.length === 0) {
           continue;
         }
-        if (
-          !brandItem.capacities ||
-          brandItem.capacities.length === 0 ||
-          brandItem?.capacities[0]?.variant?.option1Value != brandItem?.sizeQuantities[0]?.variant_size
-        ) {
+
+        // Skip if isInitiated and totalSelectedCapacity is 0
+        if (isInitiated && totalSelectedCapacity === 0) {
           continue;
         }
-        const rawPrice = brandItem?.price;
-        const price = rawPrice === null ? 0 : Number(rawPrice);
 
-        if (price > 0) {
-          hasPrice = true; // ✅ mark that at least one priced item exists
+        let totalDemandQty = 0;
+        for (const [size, data] of filteredSizes) {
+          const typedData = data as { quantity: number; demand: number };
+          totalDemandQty += typedData.demand;
         }
 
-        // Normalize consumerDemand into a number
-        let qty = 0;
-        const demand = brandItem?.consumerDemand;
-        if (demand && typeof demand === 'object') {
-          qty = Object.values(demand as Record<string, any>).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0);
-        } else {
-          qty = Number(demand) || 0;
+        if (totalDemandQty === 0) {
+          continue;
+        }
+
+        if (itemPrice > 0) {
+          hasPrice = true;
         }
 
         // If demand exists but price is null/0 → disable review and skip totals
-        if (qty > 0 && price === 0) {
+        if (totalDemandQty > 0 && itemPrice === 0) {
           disableReview = true;
           continue;
         }
 
         // Only add valid priced items
-        if (price > 0 && qty > 0) {
-          totalPrice += price * qty;
-          itemTotal += qty;
+        if (itemPrice > 0 && totalDemandQty > 0) {
+          totalPrice += itemPrice * totalDemandQty;
+          itemTotal += totalDemandQty;
         }
       }
 
@@ -1952,7 +2166,10 @@ export class OrdersService {
     } catch (err) {
       await transaction.rollback();
       console.error('❌ itemTotalPrice error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -2018,7 +2235,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ totalItemCount error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -2113,8 +2333,11 @@ export class OrdersService {
 
       return { success: true, data: finalCount };
     } catch (err) {
-      console.log('err in order count', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      console.error('❌ orderCount error:', err);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -2163,7 +2386,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ agentList error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -2195,7 +2421,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ startOrderProcess error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG || 'Something went wrong',
+      });
     }
   }
 
@@ -2208,7 +2437,10 @@ export class OrdersService {
 
       const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
       if (!order) {
-        throw new BadRequestException(AllMessages.PAKG_NF || 'Order not found.');
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.PAKG_NF || 'Order not found.',
+        });
       }
 
       order.sales_agent_id = agentId;
@@ -2221,7 +2453,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ assignSalesAgent error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG || 'Something went wrong.',
+      });
     }
   }
 
@@ -2243,7 +2478,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ getVariantCost error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -2256,7 +2494,10 @@ export class OrdersService {
       const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
 
       if (!order) {
-        throw new BadRequestException(AllMessages.PAKG_NF);
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.PAKG_NF,
+        });
       }
 
       order.notes = notes;
@@ -2268,17 +2509,26 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ addNotes error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
+  /**
+   * @description Get order Notes
+   */
   async getNotes(param: DTO.OrderIdParamDto) {
     try {
       const { orderId } = param;
       const order = await this.pkgRepo.packageOrderModel.findByPk(orderId, { attributes: ['notes'] });
 
       if (!order) {
-        throw new BadRequestException(AllMessages.PAKG_NF);
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.PAKG_NF,
+        });
       }
 
       return {
@@ -2287,7 +2537,11 @@ export class OrdersService {
         data: order.notes,
       };
     } catch (err) {
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      console.error('❌ getNotes error:', err);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -2295,7 +2549,9 @@ export class OrdersService {
    * @description Confirm order from store side
    */
   async storeConfirm(param: DTO.OrderIdParamDto, user: getUser, body: any) {
-    const transaction = await this.sequelize.transaction();
+    const transaction = await this.sequelize.transaction({
+      isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
+    });
     try {
       const { orderId } = param;
       const { storeId, userId, roleId, token } = user;
@@ -2322,12 +2578,14 @@ export class OrdersService {
             ],
           },
         ],
-        transaction,
       });
 
       if (!order) {
         await transaction.rollback();
-        throw new BadRequestException(AllMessages.PAKG_NF);
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.PAKG_NF,
+        });
       }
 
       if (order.sales_agent_id == null) {
@@ -2353,7 +2611,10 @@ export class OrdersService {
           },
         );
       }
+      const customer = order.customers?.[0];
+      const customerId = customer?.customer_id;
 
+      // Update order status
       order.status = PACKAGE_STATUS.IN_PROGRESS;
       await order.save({ transaction });
 
@@ -2384,7 +2645,10 @@ export class OrdersService {
     } catch (err) {
       console.error('❌ storeConfirm error:', err);
       if (transaction) await transaction.rollback();
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 
@@ -2468,6 +2732,7 @@ export class OrdersService {
           success: false,
           refresh: true,
           message: 'Inventory quantities have changed, this page will now refresh with updates.',
+          // outOfStock,
         };
       }
 
@@ -2478,7 +2743,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ checkStock error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG || 'Something went wrong.',
+      });
     }
   }
 
@@ -2660,7 +2928,10 @@ export class OrdersService {
     } catch (err) {
       await t.rollback();
       console.error('❌ syncStock error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG || 'Something went wrong.');
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG || 'Something went wrong.',
+      });
     }
   }
 
@@ -2837,7 +3108,10 @@ export class OrdersService {
       if (transaction) await transaction.rollback();
       console.error('❌ syncFullStock error:', err);
 
-      throw new BadRequestException(AllMessages.SMTHG_WRNG || 'Something went wrong.');
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG || 'Something went wrong.',
+      });
     }
   }
 }

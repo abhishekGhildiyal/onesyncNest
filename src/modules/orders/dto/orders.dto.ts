@@ -26,7 +26,7 @@ export class OrderIdStatusParamDto {
   orderId: number | string;
 
   @IsOptional()
-  @IsIn(Object.values(PACKAGE_STATUS))
+  @IsIn(Object.values({ ...PACKAGE_STATUS, access: 'access' }))
   status: PACKAGE_STATUS;
 }
 export class saveAsDraftDto {
@@ -160,8 +160,7 @@ export class UpdateQuantityDto {
   items: ItemQuantityDto[];
 
   @IsOptional()
-  @IsNumber()
-  packageOrderId?: number;
+  packageOrderId?: number | string;
 
   @IsOptional()
   isSearch: Boolean;
