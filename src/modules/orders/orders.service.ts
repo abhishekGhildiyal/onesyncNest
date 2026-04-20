@@ -1772,7 +1772,7 @@ export class OrdersService {
     let transaction;
     try {
       const { confirmDate } = body;
-      const { userId, roleName, id } = user;
+      const { userId, roleName, fullName } = user;
       // legacy controller extracts fullName, userId from req.user
       // here user might be the decoded token payload.
 
@@ -1784,7 +1784,10 @@ export class OrdersService {
 
       if (!order) {
         await transaction.rollback();
-        throw new BadRequestException(AllMessages.PAKG_NF);
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.PAKG_NF,
+        });
       }
 
       if (order.status !== PACKAGE_STATUS.IN_REVIEW) {
@@ -1805,86 +1808,65 @@ export class OrdersService {
         { transaction },
       );
 
-      // Verify if markSoldInventory logic is needed. Legacy commented it out?
-      // User instruction: "Updating existing NestJS services (e.g., confirmOrder) to integrate the newly ported helpers."
-      // So we MUST call it.
-
-      // We need to pass: orderId, confirmDate, storeId, userId, roleId, token, transaction, shopifyService
-      // Nested user object might have id as userId.
-      const validUserId = userId || id;
-
-      // We need roleId. user object might have roleName.
-      // We might need to fetch roleId from roleName or user object has it.
-      // For now assuming user object has roleId or we can look it up?
-      // Legacy "req.user" likely had it.
-      // Let's assume user.roleId exists or we pass 0/null and helper handles it?
-      // Helper uses it for headers.
-
-      let roleId = user.roleId;
-      if (!roleId && user.roleName) {
-        // fetch role or cache?
-        const role = await this.userRepo.roleModel.findOne({
-          where: { roleName: user.roleName },
-        });
-        roleId = role ? role.id : 0;
-      }
-
-      await this.MarkInventorySold.markSoldInventory(
-        orderId,
-        confirmDate,
-        store_id,
-        validUserId,
-        roleId,
-        token,
-        transaction,
-      );
+      //   await this.MarkInventorySold.markSoldInventory(
+      //     orderId,
+      //     confirmDate,
+      //     store_id,
+      //     validUserId,
+      //     roleId,
+      //     token,
+      //     transaction,
+      //   );
 
       await transaction.commit();
 
       this.socketGateway.server.emit(`reviewToProcess-${orderId}`, {
-        consumerName: user.fullName || user.firstName,
+        consumerName: fullName,
       });
       this.socketGateway.server.emit(`statusChanged-${store_id}`, {});
-      this.socketGateway.server.emit(`statusChanged-${validUserId}`, {});
+      this.socketGateway.server.emit(`statusChanged-${userId}`, {});
 
-      // Send confirmation emails in background
-      setImmediate(async () => {
-        try {
-          const packageOrder = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
-            include: [
-              { model: this.storeRepo.storeModel, as: 'store' },
-              {
-                model: this.pkgRepo.packageCustomerModel,
-                as: 'customers',
-                include: [{ model: this.userRepo.userModel, as: 'customer' }],
-              },
-            ],
-          });
+      //   // Send confirmation emails in background
+      //   setImmediate(async () => {
+      //     try {
+      //       const packageOrder = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
+      //         include: [
+      //           { model: this.storeRepo.storeModel, as: 'store' },
+      //           {
+      //             model: this.pkgRepo.packageCustomerModel,
+      //             as: 'customers',
+      //             include: [{ model: this.userRepo.userModel, as: 'customer' }],
+      //           },
+      //         ],
+      //       });
 
-          if (packageOrder) {
-            const anyOrder = packageOrder as any;
-            const customers = anyOrder.customers || [];
+      //       if (packageOrder) {
+      //         const anyOrder = packageOrder as any;
+      //         const customers = anyOrder.customers || [];
 
-            for (const customer of customers) {
-              if (customer.customer?.email) {
-                await this.mailService.sendOrderConfirmationEmail({
-                  to: customer.customer.email,
-                  orderNumber: anyOrder.order_id,
-                  storeName: anyOrder.store?.store_name,
-                  customerName: `${customer.customer.firstName || ''} ${customer.customer.lastName || ''}`.trim(),
-                });
-              }
-            }
-          }
-        } catch (emailErr) {
-          console.error('❌ Background email error:', emailErr);
-        }
-      });
+      //         for (const customer of customers) {
+      //           if (customer.customer?.email) {
+      //             await this.mailService.sendOrderConfirmationEmail({
+      //               to: customer.customer.email,
+      //               orderNumber: anyOrder.order_id,
+      //               storeName: anyOrder.store?.store_name,
+      //               customerName: `${customer.customer.firstName || ''} ${customer.customer.lastName || ''}`.trim(),
+      //             });
+      //           }
+      //         }
+      //       }
+      //     } catch (emailErr) {
+      //       console.error('❌ Background email error:', emailErr);
+      //     }
+      //   });
 
       return { success: true, message: AllMessages.PKG_ISIN_PRGS };
     } catch (err) {
       if (transaction) await transaction.rollback();
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 

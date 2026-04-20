@@ -97,7 +97,7 @@ export class ReducePackageQuantity {
         {
           model: this.pkgRepo.packageBrandItemsModel,
           as: 'qtyItem', // Ensure strict association alias match
-          where: { product_id: product_id },
+          where: { product_id },
           include: [
             {
               model: this.pkgRepo.packageBrandModel,

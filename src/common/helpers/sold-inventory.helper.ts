@@ -335,8 +335,6 @@ export class MarkInventorySold {
                 }
             } */
 
-          // desync Web items
-          // ✅ desync Web items
           // ✅ desync Web items - matching the CURL format
           if (allDeletedOrNotFound) {
             console.log(`🌐 All variants gone — cleaning up web-scope for product ${product_id}...`);
