@@ -3,6 +3,7 @@ import { GetUser } from 'src/common/decorators/get-user.decorator';
 import type { getUser } from 'src/common/interfaces/common/getUser';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
+import { StoreAdminGuard } from '../../common/guards/store-admin.guard';
 import * as DTO from './dto/store.dto';
 import { StoreService } from './store.service';
 
@@ -89,5 +90,21 @@ export class StoreController {
   @Get('deleteTemplate/:id')
   deleteLabelTemplate(@Param('id') id: number) {
     return this.storeService.deleteLabelTemplate(id);
+  }
+
+  @Post('consumerOrderSettings')
+  saveConsumerOrderSettings(@GetUser() user: getUser, @Body() body: any) {
+    return this.storeService.saveConsumerOrderSettings(user, body);
+  }
+
+  @Get('consumerOrderSettings')
+  getConsumerOrderSettings(@GetUser() user: getUser) {
+    return this.storeService.getConsumerOrderSettings(user);
+  }
+
+  @UseGuards(StoreAdminGuard)
+  @Get('globalSearch')
+  globalSearch(@GetUser() user: getUser, @Query() query: { search?: string }) {
+    return this.storeService.globalSearch(user, query);
   }
 }

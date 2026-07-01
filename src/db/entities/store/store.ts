@@ -128,6 +128,47 @@ export class Store extends Model {
   })
   declare sendgridFromEmail: string;
 
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'show_prices_to_consumer',
+  })
+  declare show_prices_to_consumer: boolean;
+
+  @Column({
+    type: DataType.TEXT,
+    allowNull: true,
+    field: 'consumer_order_payment_note',
+  })
+  declare consumer_order_payment_note: string;
+
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'is_used_only_products_store',
+  })
+  declare is_used_only_products_store: boolean;
+
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'is_unique_product_store',
+  })
+  declare is_unique_product_store: boolean;
+
+  declare tags?: import('../tags/storeTagSource').StoreTagSource[];
+
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'is_notes_with_email',
+  })
+  declare isNotesWithEmail: boolean;
+
   // Hide sensitive fields in JSON responses
   toJSON(): Omit<
     this,

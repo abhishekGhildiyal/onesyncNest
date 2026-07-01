@@ -59,6 +59,12 @@ export class PackageBrandItems extends Model {
   declare consumerDemand: number;
 
   @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  declare originalDemand: number;
+
+  @Column({
     type: DataType.ENUM(...Object.values(ORDER_ITEMS)),
     defaultValue: null,
     allowNull: true,

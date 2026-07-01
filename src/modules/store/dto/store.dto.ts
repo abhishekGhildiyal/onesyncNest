@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsEmail, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
-export class StoreAddressDto {
+class StoreAddressDto {
   @IsString()
   s_country: string;
   @IsString()
@@ -17,7 +17,7 @@ export class StoreAddressDto {
   s_zip: string;
 }
 
-export class ShippingAddressItemDto {
+class ShippingAddressItemDto {
   @IsOptional()
   @IsString()
   label?: string;

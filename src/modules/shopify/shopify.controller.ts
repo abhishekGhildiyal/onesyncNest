@@ -1,11 +1,14 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { ShopifyServiceFactory } from './shopify.service';
-
-import { BadRequestException } from '@nestjs/common';
+import { GetUser } from 'src/common/decorators/get-user.decorator';
+import { AuthGuard } from 'src/common/guards/auth.guard';
+import type { getUser } from 'src/common/interfaces/common/getUser';
+import { AllMessages } from 'src/common/constants/messages';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
 import { buildShopifyPayload } from './shopify.helper';
+import { shopifyGraphqlRequest } from './shopify-graphql.client';
+import { ShopifyServiceFactory } from './shopify.service';
 
 @ApiTags('Shopify')
 @Controller('shopify')
@@ -126,6 +129,67 @@ export class ShopifyController {
       success: true,
       message: 'Shopify items deleted successfully.',
       data: deletionResults,
+    };
+  }
+
+  @Get('get-channels')
+  @UseGuards(AuthGuard)
+  async getChannels(@GetUser() user: getUser) {
+    const storeId = user?.storeId;
+    if (!storeId) {
+      throw new BadRequestException({ success: false, message: 'storeId is required.' });
+    }
+
+    const store = await this.storeRepo.storeModel.findByPk(storeId);
+    if (!store) {
+      throw new BadRequestException({ success: false, message: AllMessages.STORE_NF || 'Store not found.' });
+    }
+
+    if (!store.shopify_store || !store.shopify_token) {
+      throw new BadRequestException({
+        success: false,
+        message: 'Shopify credentials are not configured for this store.',
+      });
+    }
+
+    const SHOPIFY_CHANNELS_QUERY = `
+      query shopifySalesChannels {
+        publications(first: 30) {
+          nodes {
+            id
+            name
+            catalog {
+              title
+            }
+          }
+        }
+      }
+    `;
+
+    const data: any = await shopifyGraphqlRequest(store, SHOPIFY_CHANNELS_QUERY, {});
+
+    const channels = (data?.publications?.nodes || [])
+      .map((node: any) => {
+        const name = node?.name || node?.catalog?.title || '';
+        return {
+          publicationId: node?.id || null,
+          id: node?.id || null,
+          name,
+          channelName: name,
+          displayName: name,
+          isShopifyChannel: true,
+        };
+      })
+      .filter(
+        (channel: any) =>
+          channel.name &&
+          (store.is_used_only_products_store || channel.name.toLowerCase() !== 'point of sale'),
+      );
+
+    return {
+      success: true,
+      message: 'Shopify channels fetched successfully.',
+      data: channels,
     };
   }
 }

@@ -1439,7 +1439,7 @@ export class OrdersService {
   async createOrder(user: any, body: any) {
     const t = await this.sequelize.transaction();
     try {
-      const { packageOrderId, brandIds = [] } = body;
+      const { packageOrderId, brandIds = [], showSellingPrice } = body;
       const { userId } = user;
 
       const existingOrder = await this.pkgRepo.packageOrderModel.findByPk(packageOrderId, {
@@ -1490,7 +1490,7 @@ export class OrdersService {
 
       await this.pkgRepo.packageOrderModel.update(
         {
-          status: PACKAGE_STATUS.CREATED,
+          status: showSellingPrice ? PACKAGE_STATUS.CONFIRM : PACKAGE_STATUS.CREATED,
           order_id: await generateOrderId({
             storeId: existingOrder.store.store_id,
             prefix: existingOrder.store.store_code,
@@ -1528,7 +1528,7 @@ export class OrdersService {
         project: process.env.PROJECT_NAME,
         orderNo: existingOrder.order_id,
         consumerName,
-        link: `${process.env.FRONTEND_URL}onesync.test/consumer-orders/open/${existingOrder.id}`,
+        link: `${process.env.FRONTEND_URL}onesync.test/consumer-orders/${showSellingPrice ? 'confirm' : 'open'}/${existingOrder.id}`,
         supportEmail: process.env.SUPPORT_EMAIL,
         frontendURL: process.env.FRONTEND_URL,
         storeLogo: existingOrder?.store?.store_icon,
@@ -1537,8 +1537,11 @@ export class OrdersService {
 
       await t.commit();
 
-      // Socket to send item updates -----------------------
-      this.socketGateway.server.emit(`open-${existingOrder?.store_id}`);
+      if (showSellingPrice) {
+        this.socketGateway.server.emit(`confirm-${existingOrder?.store_id}`);
+      } else {
+        this.socketGateway.server.emit(`open-${existingOrder?.store_id}`);
+      }
       this.socketGateway.server.emit(`statusChanged-${existingOrder?.store_id}`);
       this.socketGateway.server.emit(`statusChanged-${userId}`);
 
@@ -1546,7 +1549,7 @@ export class OrdersService {
       setImmediate(() => {
         if (existingOrder?.user?.email) {
           this.mailService
-            .sendMail(existingOrder.user.email, html, subject)
+            .sendMail(existingOrder.user.email, html, subject, existingOrder.store_id)
             .catch((err) => console.error('❌ Email send failed:', err));
         }
       });
@@ -1562,7 +1565,7 @@ export class OrdersService {
     } catch (err) {
       if (t) await t.rollback();
       console.error('❌ createOrder error:', err);
-      throw new BadRequestException(AllMessages.SMTHG_WRNG);
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
     }
   }
 
@@ -1669,8 +1672,9 @@ export class OrdersService {
   /**
    * @description Mark order for Review and save price step 3
    */
-  async markReview(orderId: DTO.OrderIdParamDto, user: getUser) {
+  async markReview(param: DTO.OrderIdParamDto, user: getUser) {
     const t = await this.sequelize.transaction();
+    const { orderId } = param;
     try {
       const existingOrder: any = await this.pkgRepo.packageOrderModel.findOne({
         where: { id: orderId, status: PACKAGE_STATUS.INITIATED },
@@ -1744,7 +1748,7 @@ export class OrdersService {
       setImmediate(async () => {
         Promise.all(
           Array.from(recipientEmails).map((email) =>
-            this.mailService.sendMail(String(email), html, subject).catch((err) => {
+            this.mailService.sendMail(String(email), html, subject, existingOrder.store_id).catch((err) => {
               console.error(`❌ Email send failed for ${email}:`, err);
             }),
           ),
@@ -1758,6 +1762,7 @@ export class OrdersService {
     } catch (err) {
       if (t) await t.rollback();
       console.error('❌ markReview error:', err);
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException({
         success: false,
         message: AllMessages.SMTHG_WRNG,
@@ -1768,18 +1773,17 @@ export class OrdersService {
   /**
    * @description Mark order as confirm by consumer
    */
-  async confirmOrder(orderId: number, user: any, body: any, token: string) {
-    let transaction;
+  async confirmOrder(orderId: number, user: getUser, body: DTO.ConfirmOrderDto) {
+    let transaction: Transaction | undefined;
     try {
       const { confirmDate } = body;
-      const { userId, roleName, fullName } = user;
-      // legacy controller extracts fullName, userId from req.user
-      // here user might be the decoded token payload.
+      const { userId, fullName } = user;
 
       transaction = await this.sequelize.transaction();
 
       const order = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
         transaction,
+        lock: transaction.LOCK.UPDATE,
       });
 
       if (!order) {
@@ -1808,61 +1812,20 @@ export class OrdersService {
         { transaction },
       );
 
-      //   await this.MarkInventorySold.markSoldInventory(
-      //     orderId,
-      //     confirmDate,
-      //     store_id,
-      //     validUserId,
-      //     roleId,
-      //     token,
-      //     transaction,
-      //   );
-
       await transaction.commit();
+      transaction = undefined;
 
-      this.socketGateway.server.emit(`reviewToProcess-${orderId}`, {
-        consumerName: fullName,
-      });
-      this.socketGateway.server.emit(`statusChanged-${store_id}`, {});
-      this.socketGateway.server.emit(`statusChanged-${userId}`, {});
-
-      //   // Send confirmation emails in background
-      //   setImmediate(async () => {
-      //     try {
-      //       const packageOrder = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
-      //         include: [
-      //           { model: this.storeRepo.storeModel, as: 'store' },
-      //           {
-      //             model: this.pkgRepo.packageCustomerModel,
-      //             as: 'customers',
-      //             include: [{ model: this.userRepo.userModel, as: 'customer' }],
-      //           },
-      //         ],
-      //       });
-
-      //       if (packageOrder) {
-      //         const anyOrder = packageOrder as any;
-      //         const customers = anyOrder.customers || [];
-
-      //         for (const customer of customers) {
-      //           if (customer.customer?.email) {
-      //             await this.mailService.sendOrderConfirmationEmail({
-      //               to: customer.customer.email,
-      //               orderNumber: anyOrder.order_id,
-      //               storeName: anyOrder.store?.store_name,
-      //               customerName: `${customer.customer.firstName || ''} ${customer.customer.lastName || ''}`.trim(),
-      //             });
-      //           }
-      //         }
-      //       }
-      //     } catch (emailErr) {
-      //       console.error('❌ Background email error:', emailErr);
-      //     }
-      //   });
+      this.socketGateway.server.emit(`reviewToProcess-${orderId}`, { consumerName: fullName });
+      this.socketGateway.server.emit(`statusChanged-${store_id}`);
+      this.socketGateway.server.emit(`statusChanged-${userId}`);
 
       return { success: true, message: AllMessages.PKG_ISIN_PRGS };
     } catch (err) {
-      if (transaction) await transaction.rollback();
+      if (transaction && !(transaction as Transaction & { finished?: boolean }).finished) {
+        await transaction.rollback();
+      }
+      console.error('❌ confirmOrder error:', err);
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException({
         success: false,
         message: AllMessages.SMTHG_WRNG,
@@ -1878,7 +1841,7 @@ export class OrdersService {
       const { packageOrderId, brandIds = [] } = body;
 
       const packageOrder = await this.pkgRepo.packageOrderModel.findByPk(packageOrderId);
-      if (!packageOrder) throw new BadRequestException(AllMessages.PAKG_NF);
+      if (!packageOrder) throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
 
       //   Update brands
       await this.pkgRepo.packageBrandModel.update(
@@ -2387,7 +2350,10 @@ export class OrdersService {
       });
 
       if (!order) {
-        throw new BadRequestException(AllMessages.PAKG_NF || 'Order not found.');
+        throw new BadRequestException({
+          success: false,
+          message: AllMessages.PAKG_NF || 'Order not found.',
+        });
       }
 
       order.employee_id = Number(agentId || user.userId);
@@ -2530,7 +2496,7 @@ export class OrdersService {
   /**
    * @description Confirm order from store side
    */
-  async storeConfirm(param: DTO.OrderIdParamDto, user: getUser, body: any) {
+  async storeConfirm(param: DTO.OrderIdParamDto, user: getUser, body: DTO.StoreConfirmDto) {
     const transaction = await this.sequelize.transaction({
       isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
     });
@@ -2613,10 +2579,10 @@ export class OrdersService {
 
       await transaction.commit();
 
-      // Sockets
-      this.socketGateway.server.emit(`submittedToInbound-${orderId}`, {
-        storeName: order?.store?.store_name,
-      });
+      // Sockets (commented out in Express — keep parity)
+      // this.socketGateway.server.emit(`submittedToInbound-${orderId}`, {
+      //   storeName: order?.store?.store_name,
+      // });
       // this.socketGateway.server.emit(`statusChanged-${customerId}`);
       // this.socketGateway.server.emit(`statusChanged-${storeId}`);
 
@@ -2626,7 +2592,10 @@ export class OrdersService {
       };
     } catch (err) {
       console.error('❌ storeConfirm error:', err);
-      if (transaction) await transaction.rollback();
+      if (transaction && !(transaction as Transaction & { finished?: boolean }).finished) {
+        await transaction.rollback();
+      }
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException({
         success: false,
         message: AllMessages.SMTHG_WRNG,
@@ -2668,7 +2637,7 @@ export class OrdersService {
         // ✅ Fetch DB variants (trim DB side using Sequelize.fn)
         const dbVariants = await this.productRepo.variantModel.findAll({
           where: {
-            product_id: productMainId,
+            productId: productMainId,
             status: 1,
             quantity: { [Op.gt]: 0 },
             [Op.and]: [
@@ -2744,11 +2713,11 @@ export class OrdersService {
 
       const variants = await this.productRepo.variantModel.findAll({
         where: {
-          product_id: productId,
+          productId,
           status: 1,
           quantity: { [Op.gt]: 0 },
           [Op.and]: [
-            this.sequelize.where(this.sequelize.fn('TRIM', this.sequelize.col('option1Value')), {
+            this.sequelize.where(this.sequelize.fn('TRIM', this.sequelize.col('option1value')), {
               [Op.in]: trimmedSizes,
             }),
           ],
@@ -3094,6 +3063,547 @@ export class OrdersService {
         success: false,
         message: AllMessages.SMTHG_WRNG || 'Something went wrong.',
       });
+    }
+  }
+
+  async cancelOrder(param: DTO.OrderIdParamDto) {
+    try {
+      const { orderId } = param;
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
+      if (!order) {
+        throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
+      }
+
+      if (
+        [
+          PACKAGE_STATUS.STORE_CONFIRM,
+          PACKAGE_STATUS.IN_PROGRESS,
+          PACKAGE_STATUS.COMPLETED,
+          PACKAGE_STATUS.CLOSE,
+        ].includes(order.status as PACKAGE_STATUS)
+      ) {
+        throw new BadRequestException({ success: false, message: 'Order cannot be cancelled.' });
+      }
+
+      order.status = PACKAGE_STATUS.CANCELLED;
+      await order.save();
+
+      return { success: true, message: 'Order cancelled successfully.' };
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+    }
+  }
+
+  async paymentNote(body: DTO.PaymentNoteDto) {
+    try {
+      const { orderId, paymentNote } = body;
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
+      if (!order) {
+        throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
+      }
+      order.payment_note = paymentNote;
+      await order.save();
+      return { success: true, message: AllMessages.PAYMENT_NOTE_ADDED };
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+    }
+  }
+
+  async getPaymentNote(param: DTO.OrderIdParamDto) {
+    try {
+      const { orderId } = param;
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
+      if (!order) {
+        throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
+      }
+      return {
+        success: true,
+        message: AllMessages.FTCH_PAYMENT_NOTE,
+        data: order.payment_note,
+      };
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+    }
+  }
+
+  async getShortage(user: getUser, param: DTO.OrderIdParamDto) {
+    try {
+      const { orderId } = param;
+      const { storeId } = user;
+
+      const order: any = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
+        include: [
+          {
+            model: this.pkgRepo.packageBrandModel,
+            as: 'brands',
+            include: [
+              {
+                model: this.pkgRepo.packageBrandItemsModel,
+                as: 'items',
+                include: [
+                  {
+                    model: this.productRepo.productListModel,
+                    as: 'products',
+                    attributes: ['product_id', 'itemName', 'skuNumber', 'image'],
+                  },
+                  {
+                    model: this.pkgRepo.packageBrandItemsQtyModel,
+                    as: 'sizeQuantities',
+                    attributes: ['variant_size', 'originalCapacity', 'selectedCapacity'],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      if (!order || order.store_id !== storeId) {
+        throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
+      }
+
+      const allowedStatuses = [PACKAGE_STATUS.IN_PROGRESS, PACKAGE_STATUS.COMPLETED, PACKAGE_STATUS.CLOSE];
+      if (!allowedStatuses.includes(order.status)) {
+        throw new BadRequestException({
+          success: false,
+          message: `Shortage check is only available for orders in: ${allowedStatuses.join(', ')}`,
+        });
+      }
+
+      const shortages: any[] = [];
+      order.brands?.forEach((brand: any) => {
+        brand.items?.forEach((item: any) => {
+          const product = item.products;
+          const itemShortages = item.sizeQuantities
+            ?.filter((sq: any) => (sq.originalCapacity || 0) > (sq.selectedCapacity || 0))
+            .map((sq: any) => ({
+              variant_size: sq.variant_size,
+              originalDemand: sq.originalCapacity || 0,
+              fulfilledQuantity: sq.selectedCapacity || 0,
+              shortageCount: (sq.originalCapacity || 0) - (sq.selectedCapacity || 0),
+            }));
+
+          if (itemShortages?.length > 0) {
+            shortages.push({
+              product: {
+                id: product?.product_id,
+                name: product?.itemName,
+                sku: product?.skuNumber,
+                image: product?.image?.split(',')[0],
+              },
+              shortageDetails: itemShortages,
+            });
+          }
+        });
+      });
+
+      return { success: true, data: shortages };
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+    }
+  }
+
+  async sellingPriceFloater(param: DTO.OrderIdParamDto) {
+    try {
+      const { orderId } = param;
+
+      const packageData: any = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
+        include: [
+          {
+            model: this.storeRepo.storeModel,
+            as: 'store',
+            attributes: ['show_prices_to_consumer'],
+          },
+          {
+            model: this.pkgRepo.packageBrandModel,
+            as: 'brands',
+            where: { selected: true },
+            required: false,
+            attributes: ['id', 'brand_id'],
+            include: [
+              {
+                model: this.pkgRepo.packageBrandItemsModel,
+                as: 'items',
+                where: { consumerDemand: { [Op.gt]: 0 } },
+                required: false,
+                attributes: ['id', 'product_id'],
+                include: [
+                  {
+                    model: this.pkgRepo.packageBrandItemsQtyModel,
+                    as: 'sizeQuantities',
+                    where: { selectedCapacity: { [Op.gt]: 0 } },
+                    required: false,
+                    attributes: ['selectedCapacity', 'variant_size'],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      if (!packageData?.store?.show_prices_to_consumer) {
+        return { success: true, showFloater: false };
+      }
+
+      let totalPrice = 0;
+      let totalQty = 0;
+      const productIds = new Set<number>();
+      const sizes = new Set<string>();
+      const qtyData: { productId: number; size: string; quantity: number }[] = [];
+
+      for (const brand of packageData.brands || []) {
+        for (const item of brand.items || []) {
+          for (const qty of item.sizeQuantities || []) {
+            productIds.add(item.product_id);
+            sizes.add(qty.variant_size);
+            qtyData.push({
+              productId: item.product_id,
+              size: qty.variant_size,
+              quantity: qty.selectedCapacity,
+            });
+          }
+        }
+      }
+
+      const variants = await this.productRepo.variantModel.findAll({
+        where: {
+          productId: [...productIds],
+          option1Value: [...sizes],
+          status: 1,
+        },
+        attributes: ['productId', 'option1Value', 'price'],
+      });
+
+      const variantMap: Record<string, number[]> = {};
+      for (const v of variants) {
+        const key = `${v.productId}_${v.option1Value}`;
+        if (!variantMap[key]) variantMap[key] = [];
+        variantMap[key].push(Number(v.price));
+      }
+
+      for (const data of qtyData) {
+        const key = `${data.productId}_${data.size}`;
+        const prices = variantMap[key];
+        if (!prices?.length) continue;
+        const avgPrice = prices.reduce((sum, p) => sum + p, 0) / prices.length;
+        totalPrice += avgPrice * data.quantity;
+        totalQty += data.quantity;
+      }
+
+      return { success: true, showFloater: true, totalPrice, totalQty };
+    } catch (err) {
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+    }
+  }
+
+  async setItemPriceConsumer(user: getUser, body: DTO.SetItemPriceDto) {
+    const t = await this.sequelize.transaction();
+    try {
+      const { packageOrderId, packageBrandId, prices = [], items = [], isSearch } = body;
+
+      const existingOrder: any = await this.pkgRepo.packageOrderModel.findOne({
+        where: { id: packageOrderId },
+        include: [{ model: this.pkgRepo.packageCustomerModel, as: 'customers' }],
+        transaction: t,
+      });
+
+      if (!existingOrder) {
+        await t.rollback();
+        throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
+      }
+
+      const customer_id = existingOrder.customers.map((c: any) => c.customer_id);
+
+      if (prices.length) {
+        await Promise.all(
+          prices.map(({ price, packageBrandItemId }) =>
+            this.pkgRepo.packageBrandItemsModel.update(
+              { price },
+              {
+                where: { id: packageBrandItemId, packageBrand_id: packageBrandId },
+                transaction: t,
+              },
+            ),
+          ),
+        );
+      }
+
+      let itemTotalQuantity = 0;
+      const isDraftStatus = existingOrder.status === PACKAGE_STATUS.DRAFT;
+
+      for (const item of items) {
+        const { itemId, totalQuantity, variants = [] } = item;
+        if (!itemId) continue;
+        itemTotalQuantity += totalQuantity;
+
+        const updateData: any = { consumerDemand: totalQuantity };
+        if (isDraftStatus) updateData.originalDemand = totalQuantity;
+        await this.pkgRepo.packageBrandItemsModel.update(updateData, {
+          where: { id: itemId },
+          transaction: t,
+        });
+
+        for (const variant of variants) {
+          if (!variant?.size) continue;
+          const variantUpdate: any = { selectedCapacity: variant.quantity };
+          if (isDraftStatus) variantUpdate.originalCapacity = variant.quantity;
+          await this.pkgRepo.packageBrandItemsQtyModel.update(variantUpdate, {
+            where: {
+              item_id: itemId,
+              variant_size: variant.size.trim().toUpperCase(),
+            },
+            transaction: t,
+          });
+        }
+      }
+
+      let brandSelected = itemTotalQuantity > 0;
+      if (!brandSelected && isSearch) {
+        const otherItemsCount = await this.pkgRepo.packageBrandItemsModel.count({
+          where: { packageBrand_id: packageBrandId, consumerDemand: { [Op.gt]: 0 } },
+          transaction: t,
+        });
+        brandSelected = otherItemsCount > 0;
+      }
+
+      const brandUpdateData: any = { selected: brandSelected };
+      if (isDraftStatus) brandUpdateData.originalSelected = brandSelected;
+
+      await this.pkgRepo.packageBrandModel.update(brandUpdateData, {
+        where: { package_id: packageOrderId, id: packageBrandId },
+        transaction: t,
+      });
+
+      await t.commit();
+
+      if (customer_id?.length) {
+        this.socketGateway.server.emit(`itemUpdated-${customer_id[0]}`, { packageOrderId });
+      }
+      this.socketGateway.server.emit(`updateQty-${existingOrder?.store_id}-${packageOrderId}`);
+
+      return { success: true, message: AllMessages.ITM_PRC_UPDT };
+    } catch (err) {
+      try {
+        await t.rollback();
+      } catch {
+        /* transaction may already be finished */
+      }
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+    }
+  }
+
+  async syncAndDeleteConfirm(body: DTO.SyncBeforeConfirmDto) {
+    let transaction: Transaction | undefined;
+    try {
+      const { orderId, brandIds = [] } = body;
+      transaction = await this.sequelize.transaction();
+
+      let didSyncAnything = false;
+      const summary: any[] = [];
+
+      const invalidOrder = await this.pkgRepo.packageOrderModel.findOne({
+        where: {
+          id: orderId,
+          status: {
+            [Op.in]: [PACKAGE_STATUS.IN_PROGRESS, PACKAGE_STATUS.COMPLETED, PACKAGE_STATUS.CLOSE],
+          },
+        },
+      });
+
+      if (invalidOrder) {
+        throw new BadRequestException({ success: false, message: 'Invalid Order' });
+      }
+
+      const orderBrands = await this.pkgRepo.packageBrandModel.findAll({
+        where: {
+          package_id: orderId,
+          brand_id: { [Op.in]: brandIds },
+          selected: true,
+        },
+        attributes: ['id', 'brand_id'],
+        include: [
+          {
+            model: this.pkgRepo.packageBrandItemsModel,
+            as: 'items',
+            required: true,
+            attributes: ['id', 'product_id', 'consumerDemand'],
+            include: [
+              {
+                model: this.pkgRepo.packageBrandItemsCapacityModel,
+                as: 'capacities',
+                required: false,
+                attributes: ['id', 'item_id', 'variant_id', 'selectedCapacity', 'maxCapacity'],
+              },
+              {
+                model: this.pkgRepo.packageBrandItemsQtyModel,
+                as: 'sizeQuantities',
+                where: {
+                  selectedCapacity: { [Op.gt]: 0 },
+                  variant_size: { [Op.ne]: null },
+                },
+                required: true,
+                attributes: ['id', 'variant_size', 'selectedCapacity', 'maxCapacity'],
+              },
+            ],
+          },
+        ],
+        transaction,
+      });
+
+      for (const brand of orderBrands) {
+        for (const item of brand.items ?? []) {
+          let newVariantsAdded = 0;
+          let sizesUpdated = 0;
+          let demandsReduced = 0;
+          let capacitiesDeleted = 0;
+
+          const sizes = (item.sizeQuantities || []).map((sq: any) => String(sq.variant_size).trim());
+          if (!sizes.length) continue;
+
+          const variants = await this.productRepo.variantModel.findAll({
+            where: {
+              productId: item.product_id,
+              status: 1,
+              [Op.and]: [
+                this.sequelize.where(this.sequelize.fn('TRIM', this.sequelize.col('option1Value')), {
+                  [Op.in]: sizes,
+                }),
+              ],
+            },
+            attributes: [
+              [this.sequelize.fn('TRIM', this.sequelize.col('option1Value')), 'size'],
+              [
+                this.sequelize.fn(
+                  'JSON_ARRAYAGG',
+                  this.sequelize.fn(
+                    'JSON_OBJECT',
+                    'id',
+                    this.sequelize.col('id'),
+                    'quantity',
+                    this.sequelize.col('quantity'),
+                  ),
+                ),
+                'variants',
+              ],
+            ],
+            group: ['size'],
+            raw: true,
+            transaction,
+          });
+
+          const parsedVariants = variants.map((v: any) => ({
+            size: v.size,
+            variants: typeof v.variants === 'string' ? JSON.parse(v.variants) : v.variants || [],
+          }));
+
+          const allVariantData = parsedVariants.flatMap((v) =>
+            v.variants.map((x: any) => ({ id: x.id, quantity: x.quantity, size: v.size })),
+          );
+
+          const existingVariantSet = new Set((item.capacities || []).map((c: any) => c.variant_id));
+          const newVariants = allVariantData.filter((v) => v.quantity > 0 && !existingVariantSet.has(v.id));
+
+          if (newVariants.length > 0) {
+            didSyncAnything = true;
+            newVariantsAdded = newVariants.length;
+            await this.pkgRepo.packageBrandItemsCapacityModel.bulkCreate(
+              newVariants.map((v) => ({
+                item_id: item.id,
+                variant_id: v.id,
+                maxCapacity: v.quantity,
+                selectedCapacity: 0,
+              })),
+              { ignoreDuplicates: true, transaction },
+            );
+          }
+
+          if (item.capacities?.length) {
+            for (const capacity of item.capacities) {
+              const variantData = allVariantData.find((v) => v.id === capacity.variant_id);
+              if (!variantData) {
+                didSyncAnything = true;
+                capacitiesDeleted++;
+                await this.pkgRepo.packageBrandItemsCapacityModel.destroy({
+                  where: { id: capacity.id },
+                  transaction,
+                });
+              } else {
+                const availableQty = variantData.quantity || 0;
+                if (capacity.selectedCapacity > availableQty || capacity.maxCapacity !== availableQty) {
+                  didSyncAnything = true;
+                  const newSelected =
+                    capacity.selectedCapacity > availableQty ? availableQty : capacity.selectedCapacity;
+                  if (newSelected !== capacity.selectedCapacity) demandsReduced++;
+                  await this.pkgRepo.packageBrandItemsCapacityModel.update(
+                    { selectedCapacity: newSelected, maxCapacity: availableQty },
+                    { where: { id: capacity.id }, transaction },
+                  );
+                }
+              }
+            }
+          }
+
+          for (const sizeQty of item.sizeQuantities || []) {
+            const group = parsedVariants.find((v) => v.size === String(sizeQty.variant_size).trim());
+            const totalQty = group ? group.variants.reduce((sum: number, v: any) => sum + (v.quantity || 0), 0) : 0;
+            const newMax = totalQty;
+            const newSelected = sizeQty.selectedCapacity > totalQty ? totalQty : sizeQty.selectedCapacity;
+
+            if (newMax !== sizeQty.maxCapacity || newSelected !== sizeQty.selectedCapacity) {
+              didSyncAnything = true;
+              sizesUpdated++;
+              await this.pkgRepo.packageBrandItemsQtyModel.update(
+                { maxCapacity: newMax, selectedCapacity: newSelected },
+                { where: { id: sizeQty.id }, transaction },
+              );
+              sizeQty.selectedCapacity = newSelected;
+            }
+          }
+
+          const currentDemand = (item.sizeQuantities || []).reduce(
+            (sum: number, sq: any) => sum + (sq.selectedCapacity || 0),
+            0,
+          );
+
+          if (currentDemand !== item.consumerDemand) {
+            didSyncAnything = true;
+            await this.pkgRepo.packageBrandItemsModel.update(
+              { consumerDemand: currentDemand },
+              { where: { id: item.id }, transaction },
+            );
+          }
+
+          if (newVariantsAdded || sizesUpdated || demandsReduced || capacitiesDeleted) {
+            summary.push({
+              brandId: brand.brand_id,
+              productId: item.product_id,
+              newVariantsAdded,
+              sizesUpdated,
+              demandsReduced,
+              capacitiesDeleted,
+            });
+          }
+        }
+      }
+
+      await transaction.commit();
+
+      return {
+        success: true,
+        refetch: didSyncAnything,
+        summary,
+        message: didSyncAnything ? 'Package stock synced successfully.' : 'No stock changes detected.',
+      };
+    } catch (err) {
+      if (transaction) await transaction.rollback();
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
     }
   }
 }

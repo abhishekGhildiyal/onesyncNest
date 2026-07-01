@@ -6,6 +6,7 @@ export const rolePermissionAssociations = () => {
     foreignKey: 'role_id',
     otherKey: 'permission_id',
     as: 'permissions',
+    timestamps: false,
   });
 
   Permission.belongsToMany(Role, {
@@ -13,5 +14,6 @@ export const rolePermissionAssociations = () => {
     foreignKey: 'permission_id',
     otherKey: 'role_id',
     as: 'roles',
+    timestamps: false,
   });
 };

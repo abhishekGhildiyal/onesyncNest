@@ -110,7 +110,7 @@ export class Inventory extends Model {
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  declare product_id: number;
+  declare productId: number;
 
   @Column({
     type: DataType.BOOLEAN,
@@ -131,4 +131,51 @@ export class Inventory extends Model {
     field: 'user_id',
   })
   declare user_id: number;
+
+  @Column({
+    type: DataType.BIGINT,
+    allowNull: true,
+    field: 'source_order_item_id',
+  })
+  declare sourceOrderItemId: number;
+
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'is_print_queue',
+  })
+  declare is_print_queue: boolean;
+
+  @Column({
+    type: DataType.BOOLEAN,
+    defaultValue: false,
+    field: 'auction_enabled',
+  })
+  declare auctionEnabled: boolean;
+
+  @Column({
+    type: DataType.BOOLEAN,
+    defaultValue: false,
+    field: 'linked_image',
+  })
+  declare linkedImage: boolean;
+
+  @Column({
+    type: DataType.STRING,
+    field: 'print_queue_label_type',
+  })
+  declare printQueueLabelType: string;
+
+  @Column({
+    type: DataType.DATE,
+    field: 'last_label_print_date',
+  })
+  declare lastLabelPrintDate: Date;
+
+  @Column({
+    type: DataType.DATE,
+    field: 'deleted_at',
+  })
+  declare deletedAt: Date;
 }

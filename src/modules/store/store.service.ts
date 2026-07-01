@@ -4,6 +4,7 @@ import { Op } from 'sequelize';
 import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
+import { UserRepository } from 'src/db/repository/user.repository';
 import { AllMessages } from '../../common/constants/messages';
 import * as DTO from './dto/store.dto';
 
@@ -13,6 +14,7 @@ export class StoreService {
     private readonly storeRepo: StoreRepository,
     private readonly pkgRepo: PackageRepository,
     private readonly productRepo: ProductRepository,
+    private readonly userRepo: UserRepository,
   ) {
     if (process.env.SENDGRID_API_KEY) {
       sgClient.setApiKey(process.env.SENDGRID_API_KEY);
@@ -56,7 +58,7 @@ export class StoreService {
       if (shippingAddress.length > 0) {
         await this.storeRepo.storeAddressModel.destroy({ where: { storeId }, transaction });
 
-        const newAddresses = shippingAddress.map((addr: DTO.ShippingAddressItemDto) => ({
+        const newAddresses = shippingAddress.map((addr) => ({
           storeId,
           label: addr.label || 'Address',
           country: addr.country,
@@ -596,6 +598,119 @@ export class StoreService {
         success: false,
         message: AllMessages.SMTHG_WRNG,
       });
+    }
+  }
+
+  async saveConsumerOrderSettings(user: any, body: { showPricestoConsumer?: boolean; paymentNote?: string }) {
+    try {
+      const { storeId } = user;
+      const { showPricestoConsumer = false, paymentNote = '' } = body;
+
+      const store = await this.storeRepo.storeModel.findByPk(storeId);
+      if (!store) {
+        throw new BadRequestException({ success: false, message: 'Store not found.' });
+      }
+
+      store.show_prices_to_consumer = showPricestoConsumer;
+      store.consumer_order_payment_note = paymentNote;
+      await store.save();
+
+      return { success: true, message: AllMessages.SETTINGS_UPDT };
+    } catch (err) {
+      console.error('❌ saveConsumerOrderSettings error:', err);
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+    }
+  }
+
+  async getConsumerOrderSettings(user: any) {
+    try {
+      const { storeId } = user;
+      const store = await this.storeRepo.storeModel.findByPk(storeId, {
+        attributes: ['show_prices_to_consumer', 'consumer_order_payment_note'],
+      });
+
+      if (!store) {
+        throw new BadRequestException({ success: false, message: 'Store not found.' });
+      }
+
+      return {
+        success: true,
+        data: {
+          showPricestoConsumer: store.show_prices_to_consumer,
+          paymentNote: store.consumer_order_payment_note,
+        },
+      };
+    } catch (err) {
+      console.error('❌ getConsumerOrderSettings error:', err);
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+    }
+  }
+
+  async globalSearch(user: any, query: { search?: string }) {
+    try {
+      const { search = '' } = query;
+
+      const searchCondition = {
+        [Op.or]: [
+          { skuNumber: { [Op.like]: `%${search}%` } },
+          { itemName: { [Op.like]: `%${search}%` } },
+        ],
+      };
+
+      const userSearchCondition = {
+        [Op.or]: [
+          { firstName: { [Op.like]: `%${search}%` } },
+          { lastName: { [Op.like]: `%${search}%` } },
+          { businessName: { [Op.like]: `%${search}%` } },
+          { email: { [Op.like]: `%${search}%` } },
+        ],
+      };
+
+      const [inventory, products, users] = await Promise.all([
+        this.productRepo.inventoryModel.findAll({
+          where: {
+            [Op.or]: [
+              { skuNumber: { [Op.like]: `%${search}%` } },
+              { itemName: { [Op.like]: `%${search}%` } },
+              { displayName: { [Op.like]: `%${search}%` } },
+            ],
+            storeId: user.storeId,
+            webBarcode: { [Op.ne]: null },
+          },
+          attributes: ['id', 'skuNumber', 'itemName', 'webBarcode', 'displayName'],
+          limit: 10,
+        }),
+        this.productRepo.productListModel.findAll({
+          where: { ...searchCondition, storeId: user.storeId },
+          attributes: ['product_id', 'skuNumber', 'itemName'],
+          limit: 10,
+        }),
+        this.userRepo.userStoreMappingModel.findAll({
+          where: { storeId: user.storeId },
+          attributes: ['userId'],
+          include: [
+            {
+              model: this.userRepo.userModel,
+              as: 'user',
+              where: userSearchCondition,
+              attributes: ['id', 'firstName', 'lastName', 'businessName', 'email'],
+            },
+            {
+              model: this.userRepo.roleModel,
+              as: 'role',
+              attributes: ['roleName'],
+            },
+          ],
+        }),
+      ]);
+
+      return {
+        success: true,
+        data: { products, inventory, users },
+      };
+    } catch (err) {
+      console.error('❌ globalSearch error:', err);
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
     }
   }
 }

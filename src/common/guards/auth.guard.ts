@@ -1,58 +1,113 @@
-import { BadRequestException, CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { UserRepository } from 'src/db/repository/user.repository';
+
+type AuthUser = {
+  userId: number;
+  storeId: number | null;
+  token: string;
+};
 
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(private readonly userRepo: UserRepository) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request>();
-    const requestURI = request.originalUrl;
-
-    // 1️⃣ Skip permit-all paths
+  private isOpenPath(requestURI: string): boolean {
     const openPaths = ['/auth/', '/webhook/', '/socket.io', '/stockx/'];
-    if (
+    return (
       openPaths.some((path) => requestURI.startsWith(path)) ||
       requestURI.includes('getAllTemplates') ||
       requestURI.includes('getAllLocation')
-    ) {
+    );
+  }
+
+  private async verifyToken(request: Request): Promise<AuthUser> {
+    const authHeader = request.headers['authorization'] || request.headers['x-auth-token'];
+
+    if (!authHeader) {
+      throw new UnauthorizedException('Access denied. No token provided.');
+    }
+
+    const token =
+      typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7)
+        : (authHeader as string);
+
+    const tokenRecord = await this.userRepo.userLoginTokenModel.findOne({
+      where: { token },
+    });
+
+    if (!tokenRecord) {
+      throw new ForbiddenException({
+        status: 403,
+        message: 'Invalid or expired token.',
+      });
+    }
+
+    return {
+      userId: tokenRecord.userId,
+      storeId: tokenRecord.storeId || null,
+      token: tokenRecord.token,
+    };
+  }
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request & { authUser?: AuthUser }>();
+    const requestURI = request.originalUrl || request.url;
+
+    if (this.isOpenPath(requestURI)) {
       return true;
     }
 
-    // 2️⃣ Extract headers
-    const userIdHeader = request.headers['userid'] || request.headers['userId'];
-    const token = request.headers['authorization'];
-    const storeIdHeader = request.headers['storeid'] || request.headers['storeId'];
-    const roleIdHeader = request.headers['roleid'] || request.headers['roleId'];
-
-    if (!userIdHeader) {
-      console.error('[AUTH] Missing userId header');
-      throw new BadRequestException({
-        message: 'Access denied. userId is required.',
-        success: false,
-      });
+    let authUser = request.authUser;
+    if (!authUser) {
+      try {
+        authUser = await this.verifyToken(request);
+        request.authUser = authUser;
+      } catch (err) {
+        if (
+          err instanceof UnauthorizedException ||
+          err instanceof ForbiddenException ||
+          err instanceof BadRequestException
+        ) {
+          throw err;
+        }
+        console.error('verifyToken error:', err);
+        throw new InternalServerErrorException({
+          message: 'Internal server error during token validation.',
+        });
+      }
     }
 
-    const userId = parseInt(userIdHeader as string, 10);
-    const storeId = storeIdHeader ? parseInt(storeIdHeader as string, 10) : null;
-    const roleId = roleIdHeader ? parseInt(roleIdHeader as string, 10) : null;
+    const storeIdParam = request.headers['storeid'] || request.headers['storeId'];
+    const roleIdParam = request.headers['roleid'] || request.headers['roleId'];
 
-    if (isNaN(userId)) {
-      console.error('[AUTH] Invalid userId format:', userIdHeader);
-      throw new BadRequestException({
-        message: 'Invalid userId format.',
-        success: false,
-      });
+    let userId = authUser.userId;
+    const token = authUser.token;
+
+    if (userId == null) {
+      console.error('[AUTH] userId missing from authUser');
+      throw new BadRequestException({ message: 'Access denied. userId is required.' });
     }
 
-    // console.log('[AUTH] Headers:', { userId, storeId, roleId, token });
-
-    // 3️⃣ Fetch user mappings from DB using get() method
-    let userMappings: any;
     try {
-      userMappings = await this.userRepo.userStoreMappingModel.findAll({
+      userId = parseInt(String(userId), 10);
+      if (isNaN(userId)) {
+        console.error('[AUTH] Invalid userId format');
+        throw new BadRequestException({ message: 'Invalid userId format.' });
+      }
+
+      const userMappings = await this.userRepo.userStoreMappingModel.findAll({
         where: { userId, status: 1 },
+        attributes: ['storeId', 'roleId', 'userId'],
         include: [
           {
             model: this.userRepo.userModel,
@@ -62,7 +117,7 @@ export class AuthGuard implements CanActivate {
           {
             model: this.userRepo.roleModel,
             as: 'role',
-            attributes: ['roleId', 'roleName', 'storeId'],
+            attributes: ['roleId', 'roleName'],
             include: [
               {
                 model: this.userRepo.permissionModel,
@@ -73,104 +128,123 @@ export class AuthGuard implements CanActivate {
           },
         ],
       });
-    } catch (error) {
-      console.error('[AUTH] Database error:', error);
-      throw new ForbiddenException('Error fetching user data.');
-    }
 
-    if (!userMappings || !userMappings.length) {
-      console.error('[AUTH] No user mappings found in DB for userId:', userId);
-      throw new ForbiddenException('Access denied. User mapping not found.');
-    }
-
-    // 4️⃣ Convert to plain objects using get()
-    const plainMappings = userMappings.map((mapping) => {
-      // Use get() method to access data
-      const user = mapping.get('user');
-      const role = mapping.get('role');
-
-      return {
-        id: mapping.get('id'),
-        userId: mapping.get('userId'),
-        storeId: mapping.get('storeId'),
-        roleId: mapping.get('roleId'),
-        status: mapping.get('status'),
-        user: user ? user.get() : null,
-        role: role ? role.get() : null,
-      };
-    });
-
-    // 5️⃣ Select mapping
-    let selectedMapping;
-
-    if (roleId !== null && storeId !== null) {
-      selectedMapping = plainMappings.find((m) => m.roleId === roleId && Number(m.storeId) === storeId);
-    }
-
-    if (!selectedMapping && roleId !== null) {
-      selectedMapping = plainMappings.find((m) => m.roleId === roleId);
-    }
-
-    if (!selectedMapping && storeId !== null) {
-      selectedMapping = plainMappings.find((m) => Number(m.storeId) === storeId);
-    }
-
-    if (!selectedMapping) {
-      selectedMapping = plainMappings.find((m) => m.role?.roleName === 'Consumer') || plainMappings[0];
-    }
-
-    if (!selectedMapping) {
-      console.error('[AUTH] No valid mapping found');
-      throw new ForbiddenException('Access denied. No valid user mapping found.');
-    }
-
-    // 6️⃣ Check if user exists, fetch separately if needed
-    if (!selectedMapping.user) {
-      const user = await this.userRepo.userModel.findByPk(userId, {
-        attributes: ['id', 'email', 'firstName', 'lastName'],
-      });
-
-      if (!user) {
-        console.error('[AUTH] User not found in database:', userId);
-        throw new ForbiddenException('Access denied. User not found.');
-      }
-
-      selectedMapping.user = user.get();
-    }
-
-    const isConsumer = selectedMapping.role?.roleName === 'Consumer';
-
-    // 7️⃣ Validate store access for non-consumer
-    if (!isConsumer) {
-      if (storeId === null) {
-        console.error('[AUTH] Missing storeId header for non-consumer role');
-        throw new BadRequestException({
-          message: 'Access denied. storeId is required for this user role.',
-          success: false,
+      if (!userMappings?.length) {
+        console.error('[AUTH] No mappings found for user');
+        throw new ForbiddenException({
+          status: 403,
+          message: 'Access denied. User mapping not found.',
         });
       }
 
-      const mappingStoreId = Number(selectedMapping.storeId);
+      const plainMappings = userMappings.map((mapping) => {
+        const user = mapping.get('user');
+        const role = mapping.get('role');
+        return {
+          userId: mapping.get('userId'),
+          storeId: mapping.get('storeId'),
+          roleId: mapping.get('roleId'),
+          user: user ? user.get() : null,
+          role: role ? role.get() : null,
+        };
+      });
 
-      if (mappingStoreId !== storeId) {
-        console.error('[AUTH] StoreId mismatch!');
-        throw new ForbiddenException("Access denied. User doesn't have access to this store.");
+      let selectedMapping: (typeof plainMappings)[0] | undefined;
+
+      if (roleIdParam && storeIdParam) {
+        const roleId = parseInt(String(roleIdParam), 10);
+        const storeId = parseInt(String(storeIdParam), 10);
+        if (!isNaN(roleId) && !isNaN(storeId)) {
+          selectedMapping = plainMappings.find((m) => m.roleId === roleId && m.storeId === storeId);
+        }
       }
+
+      if (!selectedMapping && roleIdParam) {
+        const roleId = parseInt(String(roleIdParam), 10);
+        if (!isNaN(roleId)) {
+          selectedMapping = plainMappings.find((m) => m.roleId === roleId);
+        }
+      }
+
+      if (!selectedMapping && storeIdParam) {
+        const storeId = parseInt(String(storeIdParam), 10);
+        if (!isNaN(storeId)) {
+          selectedMapping = plainMappings.find((m) => m.storeId === storeId);
+        }
+      }
+
+      if (!selectedMapping) {
+        selectedMapping =
+          plainMappings.find((m) => m.role?.roleName === 'Consumer') || plainMappings[0];
+      }
+
+      const isConsumer = selectedMapping.role?.roleName === 'Consumer';
+
+      if (!isConsumer) {
+        if (!storeIdParam) {
+          console.error('[AUTH] storeId header missing for non-consumer role');
+          throw new BadRequestException({
+            message: 'Access denied. storeId is required for this user role.',
+          });
+        }
+
+        const storeId = parseInt(String(storeIdParam), 10);
+        if (isNaN(storeId)) {
+          console.error('[AUTH] Invalid storeId format');
+          throw new BadRequestException({ message: 'Invalid storeId format.' });
+        }
+
+        if (selectedMapping.storeId !== storeId) {
+          console.error('[AUTH] StoreId mismatch!');
+          throw new ForbiddenException({
+            status: 403,
+            message: "Access denied. User doesn't have access to this store.",
+          });
+        }
+      }
+
+      const permissions =
+        selectedMapping.role?.permissions?.map((p: any) =>
+          typeof p === 'string' ? p : p?.name,
+        ) || [];
+
+      const resolvedUserId =
+        selectedMapping.userId ?? selectedMapping.user?.id ?? userId;
+
+      if (resolvedUserId !== selectedMapping.user?.id) {
+        console.warn('[AUTH] userId resolved from mapping.userId', {
+          tokenUserId: userId,
+          mappingUserId: selectedMapping.userId,
+          joinedUserId: selectedMapping.user?.id,
+          resolvedUserId,
+        });
+      }
+
+      (request as any).user = {
+        userId: resolvedUserId,
+        email: selectedMapping.user?.email,
+        fullName: `${selectedMapping.user?.firstName ?? ''} ${selectedMapping.user?.lastName ?? ''}`.trim(),
+        permissions,
+        roleId: selectedMapping.roleId,
+        roleName: selectedMapping.role?.roleName,
+        storeId: selectedMapping.storeId,
+        isConsumer,
+        token,
+      };
+
+      return true;
+    } catch (err) {
+      if (
+        err instanceof BadRequestException ||
+        err instanceof ForbiddenException ||
+        err instanceof UnauthorizedException
+      ) {
+        throw err;
+      }
+      console.error('Authentication error:', err);
+      throw new InternalServerErrorException({
+        message: 'Internal server error during authentication.',
+      });
     }
-
-    // 8️⃣ Attach user object
-    (request as any).user = {
-      userId: selectedMapping.user.id,
-      email: selectedMapping.user.email,
-      fullName: `${selectedMapping.user.firstName ?? ''} ${selectedMapping.user.lastName ?? ''}`.trim(),
-      permissions: selectedMapping.role?.permissions || [],
-      roleId: selectedMapping.roleId,
-      roleName: selectedMapping.role?.roleName,
-      storeId: selectedMapping.storeId,
-      isConsumer,
-      token,
-    };
-
-    return true;
   }
 }

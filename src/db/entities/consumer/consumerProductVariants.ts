@@ -65,7 +65,7 @@ export class ConsumerProductVariants extends Model {
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  declare product_id: number;
+  declare productId: number;
 
   @Column({
     type: DataType.INTEGER,

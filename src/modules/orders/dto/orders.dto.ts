@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsISO8601,
@@ -345,6 +346,10 @@ export class CreateOrderDto {
   @IsOptional()
   @IsArray()
   brandIds?: number[];
+
+  @IsOptional()
+  @IsBoolean()
+  showSellingPrice?: boolean;
 }
 
 /* -------------------- UPDATE ORDER BRANDS -------------------- */
@@ -361,7 +366,36 @@ export class UpdateOrderBrandsDto {
 
 /* -------------------- CONFIRM ORDER -------------------- */
 
+export class PaymentNoteDto {
+  @IsNotEmpty()
+  @IsNumber()
+  orderId: number;
+
+  @IsNotEmpty()
+  @IsString()
+  paymentNote: string;
+}
+
+export class SyncBeforeConfirmDto {
+  @IsNotEmpty()
+  orderId: number;
+
+  @IsNotEmpty()
+  brandIds: string[] | number[];
+}
+
+export class SetItemPriceConsumerDto extends SetItemPriceDto {}
+
 export class ConfirmOrderDto {
+  @IsNotEmpty()
+  confirmDate: string;
+}
+
+export class StoreConfirmDto {
+  @IsOptional()
+  @IsArray()
+  brandIds?: number[];
+
   @IsNotEmpty()
   confirmDate: string;
 }

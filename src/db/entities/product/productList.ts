@@ -151,6 +151,32 @@ export class ProductList extends Model {
   declare stockXSizeChart: string;
 
   @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'is_print_queue',
+  })
+  declare is_print_queue: boolean;
+
+  @Column({
+    type: DataType.STRING,
+    field: 'label_status',
+  })
+  declare labelStatus: string;
+
+  @Column({
+    type: DataType.STRING,
+    field: 'print_queue_label_type',
+  })
+  declare printQueueLabelType: string;
+
+  @Column({
+    type: DataType.DATE,
+    field: 'last_label_print_date',
+  })
+  declare lastLabelPrintDate: Date;
+
+  @Column({
     type: DataType.DATE,
     field: 'created_by',
     defaultValue: DataType.NOW,

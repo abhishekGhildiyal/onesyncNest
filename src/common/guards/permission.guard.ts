@@ -50,9 +50,7 @@ export class PermissionGuard implements CanActivate {
     const hasAny = required.some((r) => userPermissions.includes(r));
 
     if (!hasAny) {
-      throw new ForbiddenException(
-        `Access denied. Required permission: ${required.join(' OR ')}`,
-      );
+      throw new ForbiddenException({ message: 'Forbidden: No permission' });
     }
 
     return true;

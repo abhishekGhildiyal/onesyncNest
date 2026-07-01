@@ -1,13 +1,14 @@
 import { Global, Module } from '@nestjs/common';
 import { HelpersModule } from 'src/common/helpers/helpers.module';
 import { DatabaseModule } from 'src/db/database.module';
+import { MailModule } from '../mail/mail.module';
 import { SocketModule } from '../socket/socket.module';
 import { PackagesController } from './packages.controller';
 import { PackagesService } from './packages.service';
 
 @Global()
 @Module({
-  imports: [DatabaseModule, SocketModule, HelpersModule],
+  imports: [DatabaseModule, SocketModule, HelpersModule, MailModule],
   providers: [PackagesService],
   controllers: [PackagesController],
   exports: [PackagesService],

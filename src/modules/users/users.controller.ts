@@ -11,7 +11,10 @@ import { GetUser } from 'src/common/decorators/get-user.decorator';
 import type { getUser } from 'src/common/interfaces/common/getUser';
 
 import { ApiTags } from '@nestjs/swagger';
+import { PERMISSIONS } from 'src/common/constants/permissions';
+import { RequiredPermissions } from 'src/common/decorators/permission.decorator';
 import { AuthGuard } from 'src/common/guards/auth.guard';
+import { PermissionGuard } from 'src/common/guards/permission.guard';
 import { UsersService } from './users.service';
 
 @ApiTags('Users')
@@ -53,6 +56,8 @@ export class UsersController {
     return this.usersService.consumerDetails(email);
   }
 
+  @UseGuards(PermissionGuard)
+  @RequiredPermissions(PERMISSIONS.ConsumerOrders)
   @Post('updateAgentStatus')
   updateAgentStatus(@Body() body: any, @GetUser() user: getUser) {
     return this.usersService.updateAgentStatus(body, Number(user.storeId));

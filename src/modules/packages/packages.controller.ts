@@ -117,4 +117,14 @@ export class PackagesController {
   customInvoice(@GetUser() user: any, @Body() body: CustomInvoiceDto) {
     return this.packagesService.customInvoice(user, body);
   }
+
+  @Post('sendInvoiceEmail')
+  sendInvoiceToConsumer(@GetUser() user: getUser, @Body() body: { orderId: number; pdfBase64: string }) {
+    return this.packagesService.sendInvoiceToConsumer(user, body);
+  }
+
+  @Get('defaultLocation/:storeId')
+  defaultLocation(@Param('storeId') storeId: number) {
+    return this.packagesService.defaultLocation(storeId);
+  }
 }

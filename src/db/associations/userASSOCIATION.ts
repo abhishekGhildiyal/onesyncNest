@@ -1,4 +1,4 @@
-import { Role, Store, User, UserStoreMapping } from '../entities';
+import { Role, Store, User, UserForgotToken, UserStoreMapping } from '../entities';
 
 export const userAssociations = () => {
   // Setup associations here
@@ -20,5 +20,10 @@ export const userAssociations = () => {
   UserStoreMapping.belongsTo(Store, {
     foreignKey: 'storeId',
     as: 'store',
+  });
+
+  UserForgotToken.belongsTo(User, {
+    foreignKey: 'user_id',
+    as: 'user',
   });
 };

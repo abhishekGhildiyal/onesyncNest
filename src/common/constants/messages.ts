@@ -7,6 +7,8 @@ export const AllMessages = {
   // Store
   ADDR_SVD: 'Address(es) saved successfully.',
   ADDR_FTCH: 'Address(es) fetched successfully.',
+  SETTINGS_UPDT: 'Settings updated successfully.',
+  STORE_NF: 'Store not found.',
 
   FTCH_BRANDS: 'Brands fetched successfully.',
   FTCH_PRODUCTS: 'Products fetched successfully.',
@@ -33,6 +35,8 @@ export const AllMessages = {
   QUANT_UPDATED: 'Quantity updated.',
   ODR_CRTD: 'Order created successfully.',
   NOTE_ADDED: 'Note added successfully.',
+  PAYMENT_NOTE_ADDED: 'Payment note added successfully.',
+  FTCH_PAYMENT_NOTE: 'Payment note fetched successfully.',
   ITM_PRC_UPDT: 'Updates saved.',
   ALRDY_INITD: "Can't update after order is initialised.",
   PKG_INITD_SUCCSS: 'Package successfully initiated.',
@@ -49,6 +53,7 @@ export const AllMessages = {
   ORDR_CNFD: 'Order confirmed successfully.',
 
   PYMT_SUCCSS: 'Payment made successfully.',
+  FTCH_NOTES: 'Notes fetched successfully.',
   NO_SHIPMENT_DETAILS: 'No Shipment details.',
   SHP_DTL: 'Shipment details added successfully.',
   PMT_DLT: 'Payment detail deleted successfully.',

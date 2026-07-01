@@ -29,7 +29,10 @@ export class AgentGuard implements CanActivate {
     const user = req.user;
 
     if (!user) {
-      throw new UnauthorizedException('Authentication required.');
+      throw new UnauthorizedException({
+        success: false,
+        message: 'Authentication required.',
+      });
     }
 
     if (check.allowAdmin) {
@@ -53,9 +56,10 @@ export class AgentGuard implements CanActivate {
           ? 'store sales agent'
           : 'store logistic agent';
 
-      throw new ForbiddenException(
-        `Access denied. User is not a ${typeLabel}.`,
-      );
+      throw new ForbiddenException({
+        success: false,
+        message: `Access denied. User is not a ${typeLabel}.`,
+      });
     }
 
     return true;

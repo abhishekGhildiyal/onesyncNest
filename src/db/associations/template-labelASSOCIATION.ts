@@ -1,4 +1,4 @@
-import { Label, Template } from '../entities';
+import { Label, Template, TemplateItemLabel } from '../entities';
 
 export const templateLabelAssociations = () => {
   Template.belongsTo(Label, {
@@ -9,5 +9,10 @@ export const templateLabelAssociations = () => {
   Template.belongsTo(Label, {
     foreignKey: 'item_label_id',
     onDelete: 'SET NULL',
+  });
+
+  TemplateItemLabel.belongsTo(Template, {
+    foreignKey: 'template_id',
+    as: 'template',
   });
 };

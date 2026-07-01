@@ -3,21 +3,21 @@ import { ConsumerProductList, ConsumerProductVariants, CustomerInventory } from 
 export const consumerInventoryAssociations = () => {
   // Product → Variants
   ConsumerProductList.hasMany(ConsumerProductVariants, {
-    foreignKey: 'product_id',
+    foreignKey: 'productId',
     as: 'variants',
   });
   ConsumerProductVariants.belongsTo(ConsumerProductList, {
-    foreignKey: 'product_id',
+    foreignKey: 'productId',
     as: 'product',
   });
 
   // Inventory → Product
   CustomerInventory.belongsTo(ConsumerProductList, {
-    foreignKey: 'product_id',
+    foreignKey: 'productId',
     as: 'product',
   });
   ConsumerProductList.hasMany(CustomerInventory, {
-    foreignKey: 'product_id',
+    foreignKey: 'productId',
     as: 'inventoryItems',
   });
 };

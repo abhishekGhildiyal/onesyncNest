@@ -111,6 +111,85 @@ export const Templates = [
                 </html>`,
   },
   {
+    slug: TemplatesSlug.NewPackageCredentials,
+    variablesInIT: `frontendURL, packageLink, storeName, userEmail, password, supportEmail, project, oneSyncLogo, storeLogo`,
+    subject: `Your Login Credentials`,
+    html: `<!DOCTYPE html>
+                <html>
+
+                <head>
+                    <meta charset="UTF-8" />
+                    <title>Login Credentials</title>
+                </head>
+
+                <body style="margin:0; padding:0; background-color:#f0f2f5;">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f2f5; padding: 10px 20px 0;">
+                        <tr>
+                            <td align="center">
+                                <!-- Outer container -->
+                                <table width="600" cellpadding="0" cellspacing="0"
+                                    style="background-color:#ffffff; border-radius:8px; font-family:Arial, sans-serif;">
+
+                                    <!-- Header -->
+                                    <tr>
+                                        <td style="padding: 20px; text-align: left; border-bottom: 1px solid #e0e0e0;">
+                                            <table width="100%">
+                                                <tr>
+                                                    <td>
+                                                      <img src="{{storeLogo}}" style="margin-left:10px; width:40px; height:40px; object-fit: contain;" alt="storeLogo">
+                                                    </td>
+                                                    <td align="right">
+                                                        <img src="{{oneSyncLogo}}" style="margin-left:10px; width:40px; height:40px; object-fit: contain;" alt="oneSyncLogo">
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Body -->
+                                    <tr>
+                                        <td style="padding: 40px 30px; text-align: center;">
+                                            <img src="{{frontendURL}}images/mail.png" width="50" alt="Order Icon"
+                                                style="margin-bottom: 20px;" />
+
+                                            <h2 style="color: #4e5ef3; margin: 0 auto; width: 360px;">Welcome, <span
+                                                    style="color: #000;">here are your credentials</span></h2>
+
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="center" style="padding: 0 40px 30px 40px; background-color: #fff; border-bottom: 1px dashed #5d5fef18;">
+                                            <table cellpadding="0" cellspacing="0" width="100%" style="background-color: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 10px; max-width: 520px;">
+                                                <tr>
+                                                    <td style="padding: 15px 20px 5px; font-size: 16px; color: #333; text-align: center;">
+                                                        <strong>Email:</strong> {{userEmail}}
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td style="padding: 5px 20px 15px; font-size: 16px; color: #333; text-align: center;">
+                                                        <strong>Password:</strong> {{password}}
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td align="center" style="font-size: 16px; color: #999999; padding: 20px;">Powered by
+                                            <a href="{{supportEmail}}" target="_blank"
+                                                style="color: #2BB770; text-decoration: none;">{{project}}</a>
+                                        </td>
+                                    </tr>
+
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                </body>
+
+                </html>`,
+  },
+  {
     slug: TemplatesSlug.OrderRequestSubmit,
     variablesInIT: `project, orderNo, consumerName, link, supportEmail, frontendURL, storeLogo, oneSyncLogo `,
     subject: `Order Request`,
@@ -346,5 +425,185 @@ export const Templates = [
                 </body>
 
                 </html>`,
+  },
+
+  {
+    slug: TemplatesSlug.PasswordReset,
+    variablesInIT: 'frontendURL, link, supportEmail, project, twitterLink, fbLink, instaLink',
+    subject: `Password Reset Request`,
+    html: `<!DOCTYPE html>
+                <html>
+
+                <head>
+                    <meta charset="UTF-8" />
+                    <title>consumer finalize order</title>
+                </head>
+
+                <body style="margin:0; padding:0; background-color:#f0f2f5;">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f2f5; padding: 20px 0;">
+                        <tr>
+                            <td align="center">
+                                <!-- Outer container -->
+                                <table width="600" cellpadding="0" cellspacing="0"
+                                    style="background-color:#ffffff; border-radius:8px; font-family:Arial, sans-serif;">
+
+                                    <!-- Header -->
+                                    <tr>
+                                        <td style="padding: 20px; text-align: left; border-bottom: 1px solid #e0e0e0;">
+                                            <table width="100%">
+                                                <tr>
+                                                    <td style="font-size: 24px; font-weight: bold; color: #c0a562;">
+                                                        {{project}}
+                                                    </td>
+                                                    <td align="right">
+                                                        <a href="{{twitterLink}}">
+                                                            <img src="{{frontendURL}}images/twitter.png"
+                                                                style="margin-left:10px; width:20px; height:20px" alt="Twitter">
+                                                        </a>
+                                                        <a href="{{fbLink}}">
+                                                            <img src="{{frontendURL}}images/fb.png"
+                                                                style="margin-left:10px; width:20px; height:20px" alt="Facebook">
+                                                        </a>
+                                                        <a href="{{instaLink}}">
+                                                            <img src="{{frontendURL}}images/insta.png"
+                                                                style="margin-left:10px; width:20px; height:20px" alt="Instagram">
+                                                        </a>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Body -->
+                                    <tr>
+                                        <td style="padding: 40px 30px; text-align: center;">
+                                            <img src="{{frontendURL}}images/cngPswrd.svg"
+                                                width="50"
+                                                alt="Order Icon"
+                                                style="margin-bottom:20px; height: 90px" />
+
+                                            <h2 style="color:#4e5ef3; margin:0; line-height:1.6; font-weight:600;">
+                                                {{project}} <span style="color:#000;">Reset Password</span>
+                                            </h2>
+
+                                            <p style="margin-top:15px; color:#555555; font-size:16px; line-height:1.6;">
+                                                You have recently requested to reset your password for your account.
+                                                Click on this link to reset your password.
+                                            </p>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td
+                                            style="border-top:1px dashed #5d5fef18; padding:25px 0; background-color:#ffffff; text-align:center; border-radius:0 0 20px 20px;">
+                                            <a href="{{link}}"
+                                                style="display:inline-block; margin-top:10px; padding:12px 24px; background-color:#3b3bb1; color:#ffffff; text-decoration:none; border-radius:4px; font-weight:bold;">
+                                                Click to Reset
+                                            </a>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td
+                                            style="border-top:1px dashed #5d5fef18; padding:25px 30px; background-color:#ffffff; text-align:center;">
+                                            <p style="margin:0; color:#666666; line-height:1.6;">
+                                                If you did not initiate this request, please ignore this mail and the link will soon expire automatically.
+                                            </p>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td align="center" style="font-size:16px; color:#999999; padding:40px 20px;">
+                                            <a href="{{supportEmail}}" target="_blank"
+                                                style="color:#2BB770; text-decoration:none;">
+                                                {{project}}
+                                            </a>
+                                        </td>
+                                    </tr>
+
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                </body>
+
+                </html>`,
+  },
+  {
+    slug: TemplatesSlug.SendInvoiceToConsumer,
+    variablesInIT: 'project, orderNo, storeName, supportEmail, frontendURL',
+    subject: `Order Invoice`,
+    html: `<!DOCTYPE html>
+            <html>
+
+            <head>
+                <meta charset="UTF-8" />
+                <title>consumer finalize order</title>
+            </head>
+
+            <body style="margin:0; padding:0; background-color:#f0f2f5;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f2f5; padding: 20px 0;">
+                    <tr>
+                        <td align="center">
+                            <!-- Outer container -->
+                            <table width="600" cellpadding="0" cellspacing="0"
+                                style="background-color:#ffffff; border-radius:8px; font-family:Arial, sans-serif;">
+
+                                <!-- Header -->
+                                <tr>
+                                    <td style="padding: 20px; text-align: left; border-bottom: 1px solid #e0e0e0;">
+                                        <table width="100%">
+                                            <tr>
+                                                <td style="font-size: 24px; font-weight: bold; color: #c0a562;">{{project}}</td>
+                                                <td align="right">
+                                                    <a href="{{twitterLink}}"><img src="{{frontendURL}}images/twitter.png"
+                                                            width="20" style="margin-left:10px; width:20px; height:20px" alt="Twitter"></a>
+                                                    <a href="{{fbLink}}"><img src="{{frontendURL}}images/fb.png"
+                                                            width="20" style="margin-left:10px; width:20px; height:20px" alt="Facebook"></a>
+                                                    <a href="{{instaLink}}"><img src="{{frontendURL}}images/insta.png"
+                                                            width="20" style="margin-left:10px; width:20px; height:20px" alt="Instagram"></a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+
+                                <!-- Body -->
+                                <tr>
+                                    <td style="padding: 40px 30px; text-align: center;">
+                                        <img src="{{frontendURL}}/images/mail.png" width="50" alt="Order Icon"
+                                            style="margin-bottom: 20px;" />
+
+                                        <h2 style="color:#4e5ef3;margin:0 auto;width:320px;line-height:28px;">
+                                         <span style="color:#000;">{{storeName}}</span> has sent you an invoice for Order #{{orderNo}}.
+                                        </h2>
+
+                                    </td>
+                                </tr>
+
+                                <tr>
+                                    <td style=" text-align: center;">
+
+                                        <p style="font-size:16px;color:#555;margin-top:15px;">
+                                          Please find the invoice attached to this email.
+                                        </p>
+
+                                    </td>
+                                </tr>
+
+                                <tr>
+                                    <td align="center" style="font-size: 16px; color: #999999; padding: 40px 20px;">
+                                        <a href="{{supportEmail}}" target="_blank"
+                                            style="color: #2BB770; text-decoration: none;">{{project}}</a>
+                                    </td>
+                                </tr>
+
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+
+            </html>`,
   },
 ];

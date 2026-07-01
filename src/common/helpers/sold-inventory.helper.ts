@@ -1,10 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Op, Sequelize, Transaction } from 'sequelize';
 
+import { TagSource } from 'src/db/entities';
 import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
+import { buildShopifyPayload } from 'src/modules/shopify/shopify.helper';
 import { ShopifyServiceFactory } from '../../modules/shopify/shopify.service';
+import { PersistShopifyVariantIdsHelper } from './shopify/persist-shopify-variant-ids.helper';
 import { ReducePackageQuantity } from './reduce-package-qty.helper';
 
 @Injectable()
@@ -16,17 +19,19 @@ export class MarkInventorySold {
 
     private readonly ReducePkgQtyHelper: ReducePackageQuantity,
     private readonly shopifyFactory: ShopifyServiceFactory,
+    private readonly persistVariantIds: PersistShopifyVariantIdsHelper,
   ) {}
 
   markSoldInventory = async (
     orderId: number,
-    soldDate: Date,
+    soldDate: string | Date,
     storeId: string | number,
     userId: string | number,
     roleId: string | number,
     token: string,
     transaction: Transaction,
   ) => {
+    const soldOn = soldDate instanceof Date ? soldDate : new Date(soldDate);
     try {
       const store = await this.storeRepo.storeModel.findByPk(storeId, {
         transaction,
@@ -108,12 +113,12 @@ export class MarkInventorySold {
             variantEntries.push({
               size: String(qty.variant_size).trim(),
               selected_quantity: Number(qty.selectedCapacity) || 0,
-              product_id: item.products.product_id,
+              productId: item.products.product_id,
               productName: item.products.itemName,
               itemId: qty.item_id,
               sizeQtyId: qty.id,
               brandId: brand.brand_id,
-              sellingPrice: Number(item.price) || 0, // 🟢 use item.price as sellingPrice
+              sellingPrice: Number(item.price) || 0,
             });
           }
         }
@@ -126,13 +131,13 @@ export class MarkInventorySold {
 
       console.log(`🧩 Total variant entries: ${variantEntries.length}`);
 
-      // 3️⃣ Group by product_id + size, but keep brandIds separate
+      // 3️⃣ Group by productId + size, but keep brandIds separate
       const groups = new Map();
       for (const entry of variantEntries) {
-        const key = `${entry.product_id}||${entry.size}`;
+        const key = `${entry.productId}||${entry.size}`;
         if (!groups.has(key)) {
           groups.set(key, {
-            product_id: entry.product_id,
+            productId: entry.productId,
             size: entry.size,
             totalNeeded: 0,
             brandMap: new Map(),
@@ -147,16 +152,16 @@ export class MarkInventorySold {
 
       // 4️⃣ Process grouped variants
       for (const [_, group] of groups.entries()) {
-        const { product_id, size, totalNeeded, brandMap } = group;
+        const { productId, size, totalNeeded, brandMap } = group;
         if (!size || !totalNeeded) continue;
 
-        console.log(`\n🔹 Processing product=${product_id}, size=${size}, totalNeeded=${totalNeeded}`);
+        console.log(`\n🔹 Processing product=${productId}, size=${size}, totalNeeded=${totalNeeded}`);
 
         const variants = await this.productRepo.variantModel.findAll({
           where: {
-            product_id,
+            productId,
             status: 1,
-            [Op.and]: Sequelize.where(Sequelize.fn('TRIM', Sequelize.col('option1Value')), size),
+            [Op.and]: Sequelize.where(Sequelize.fn('TRIM', Sequelize.col('option1value')), size),
           },
           order: [['id', 'ASC']],
           transaction,
@@ -165,12 +170,12 @@ export class MarkInventorySold {
         });
 
         if (!variants?.length) {
-          console.warn(`⚠️ No stock found for product ${product_id} size ${size}`);
+          console.warn(`⚠️ No stock found for product ${productId} size ${size}`);
           continue;
         }
 
         let remaining = totalNeeded;
-        for (const entry of variantEntries.filter((e) => e.product_id === product_id && e.size === size)) {
+        for (const entry of variantEntries.filter((e) => e.productId === productId && e.size === size)) {
           if (remaining <= 0) break;
 
           const soldCount = Math.min(entry.selected_quantity, remaining);
@@ -225,7 +230,7 @@ export class MarkInventorySold {
           // 🟢 Update sold inventory records
           if (inventoryIds.length) {
             await this.productRepo.inventoryModel.update(
-              { soldOn: soldDate, shopifyStatus: 'Sold' },
+              { soldOn, shopifyStatus: 'Sold' },
               {
                 where: {
                   id: inventoryIds,
@@ -237,14 +242,14 @@ export class MarkInventorySold {
           }
 
           console.log(
-            `✅ Sold ${variantIds.length} variants for product ${product_id}, size ${size}, price=${entry.sellingPrice}`,
+            `✅ Sold ${variantIds.length} variants for product ${productId}, size ${size}, price=${entry.sellingPrice}`,
           );
         }
 
         // 5️⃣ Sync brand quantities
         for (const [brandId, brandQty] of brandMap.entries()) {
           await this.ReducePkgQtyHelper.reduceSoldQuantityForPackages({
-            product_id,
+            productId,
             storeId,
             size,
             soldQty: brandQty,
@@ -270,7 +275,7 @@ export class MarkInventorySold {
 
         const inventoryItems = await this.productRepo.inventoryModel.findAll({
           where: { id: [...allSoldInventoryIds], storeId },
-          attributes: ['id', 'shopifyId', 'product_id'],
+          attributes: ['id', 'shopifyId', 'productId'],
           transaction,
           lock: transaction.LOCK.UPDATE,
         });
@@ -281,108 +286,67 @@ export class MarkInventorySold {
           return;
         }
 
-        const groupedByProduct = validItems.reduce((acc, item) => {
-          if (!acc[item.product_id]) acc[item.product_id] = [];
-          acc[item.product_id].push(item.shopifyId);
-          return acc;
-        }, {});
+        const groupedByProduct = validItems.reduce(
+          (acc, item) => {
+            if (!acc[item.productId]) acc[item.productId] = [];
+            acc[item.productId].push(item.shopifyId);
+            return acc;
+          },
+          {} as Record<number, string[]>,
+        );
 
-        for (const [product_id, shopifyIds] of Object.entries(groupedByProduct)) {
+        for (const [productId, shopifyIds] of Object.entries(groupedByProduct)) {
           console.log(
-            `🧹 Deleting Shopify products for product_id=${product_id} (${(shopifyIds as string[]).length} IDs)`,
+            `🧹 Deleting Shopify products for productId=${productId} (${shopifyIds.length} IDs)`,
           );
 
-          const deleteResults = await shopifyService.deleteItems(shopifyIds as string[], Number(product_id));
+          const deleteResults = await shopifyService.deleteItems(shopifyIds, Number(productId));
 
-          const allDeletedOrNotFound = deleteResults.every((r) => r.success || r.message === 'Not found');
+          const allDeletedOrNotFound = deleteResults.every(
+            (r) => r.success || r.message === 'Not found',
+          );
+
+          if (allDeletedOrNotFound) {
+            await this.productRepo.inventoryModel.update(
+              { shopifyId: null, shopifyStatus: null },
+              { where: { shopifyId: shopifyIds }, transaction },
+            );
+          }
 
           const deletedCount = deleteResults.filter((r) => r.success).length;
           const notFoundCount = deleteResults.filter((r) => r.message === 'Not found').length;
           console.log(
-            `🧾 Product ${product_id}: Deleted=${deletedCount}, NotFound=${notFoundCount}, Total=${deleteResults.length}`,
+            `🧾 Product ${productId}: Deleted=${deletedCount}, NotFound=${notFoundCount}, Total=${deleteResults.length}`,
           );
 
-          // ✅ Cleanup web-scope items when all variants are gone
-          /**if (allDeletedOrNotFound) {
-                console.log(`🌐 All variants gone — cleaning up web-scope for product ${product_id}...`);
-                const webItems = await InventoryModel.findAll({
-                    where: {
-                        product_id,
-                        publishedScope: "web",
-                        storeId,
-                    },
-                    attributes: ["id", "shopifyId"],
-                    transaction,
-                });
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+        }
 
-                if (webItems.length > 0) {
-                    const webIds = webItems.map((i) => i.id);
+        const allProductIds = Object.keys(groupedByProduct).map(Number);
 
-                    await InventoryModel.update({ status: 2, quantity: 0 }, { where: { id: webIds }, transaction });
+        const activeVariantCounts = await this.productRepo.variantModel.findAll({
+          attributes: ['productId'],
+          where: {
+            productId: allProductIds,
+            status: 1,
+            quantity: { [Op.gt]: 0 },
+          },
+          group: ['productId'],
+          transaction,
+        });
 
-                    await Promise.all(
-                        webItems.map(async (g) => {
-                            try {
-                                await shopifyService.client.delete({ path: `products/${g.shopifyId}` });
-                                console.log(`🗑️ Deleted web-scope Shopify product ID: ${g.shopifyId}`);
-                            } catch (err) {
-                                console.error(`⚠️ Failed to delete web-scope product ${g.shopifyId}:`, err.message);
-                            }
-                        })
-                    );
-                } else {
-                    console.log(`ℹ️ No web-scope items found for product ${product_id}`);
-                }
-            } */
+        const productsWithActiveVariants = new Set(activeVariantCounts.map((v) => v.productId));
+        const productsToSync = allProductIds.filter((id) => !productsWithActiveVariants.has(id));
 
-          // ✅ desync Web items - matching the CURL format
-          if (allDeletedOrNotFound) {
-            console.log(`🌐 All variants gone — cleaning up web-scope for product ${product_id}...`);
-
-            const webItems = await this.productRepo.inventoryModel.findAll({
-              where: {
-                product_id,
-                publishedScope: 'web',
-                storeId,
-              },
-              attributes: ['id'],
-              transaction,
-            });
-
-            if (!webItems.length) {
-              console.log(`ℹ️ No web-scope items found for product ${product_id}`);
-              continue;
-            }
-
-            // ✅ EXACT curl format: array of ids
-            const postData = webItems.map((i) => i.product_id);
-
-            const requestOptions: any = {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                Authorization: token,
-                roleId,
-                userId,
-                storeId,
-              },
-              body: JSON.stringify(postData),
-            };
-
-            try {
-              console.log(`🌐 Desyncing web-scope items for product ${product_id}...${store.store_domain}`);
-              const syncResponse = await fetch(
-                `https://onesync-api-50c03c74d4bf.herokuapp.com/${store.store_domain}/syncWebInventories`,
-                requestOptions,
-              );
-
-              const syncResult = await syncResponse.json();
-
-              console.log('✅ Web items sync result:', syncResult);
-            } catch (err) {
-              console.error('❌ Error syncing web items:', err.message);
-            }
+        if (productsToSync.length > 0) {
+          try {
+            console.log(
+              `🌐 Bulk syncing web-scope items for ${productsToSync.length} products (0 active variants)... ${store.store_domain}`,
+            );
+            await this.syncWebInventories({ productIds: productsToSync, store, transaction });
+            console.log('✅ Bulk web items sync completed locally');
+          } catch (err: any) {
+            console.error('❌ Error in bulk web items sync:', err.message);
           }
         }
 
@@ -393,6 +357,128 @@ export class MarkInventorySold {
     } catch (err) {
       console.error('❌ Error in markSoldInventory', err);
       throw new BadRequestException({ message: err.message, success: false });
+    }
+  };
+
+  /** Sync web-scope inventories for a list of product IDs (background-safe). */
+  async syncWebInventories(data: {
+    productIds: number[];
+    store: any;
+    transaction?: Transaction;
+  }) {
+    const { productIds, store, transaction } = data;
+    try {
+      if (!store.shopify_store || !store.shopify_token) {
+        console.log(`ℹ️ [syncWebInventories] Shopify Sync Is Disabled for store: ${store.store_name}`);
+        return;
+      }
+
+      if (!productIds?.length) {
+        console.log('⚠️ [syncWebInventories] No product IDs provided.');
+        return;
+      }
+
+      console.log(`🚀 [syncWebInventories] Starting sync for product IDs: ${productIds}`);
+
+      const webInventories = await this.productRepo.inventoryModel.findAll({
+        where: {
+          productId: productIds,
+          publishedScope: 'web',
+          storeId: store.store_id,
+        },
+        include: [
+          {
+            model: this.productRepo.productListModel,
+            as: 'productList',
+            include: [{ model: TagSource, as: 'tags', through: { attributes: [] } }],
+          },
+          {
+            model: this.productRepo.variantModel,
+            as: 'variants',
+          },
+        ],
+        transaction,
+      });
+
+      if (!webInventories.length) {
+        console.log('⚠️ [syncWebInventories] No web-scope items found.');
+        return;
+      }
+
+      const shopifyService = this.shopifyFactory.createService(store, { useGraphql: true });
+
+      for (const inventory of webInventories) {
+        try {
+          const inv = inventory as any;
+          if (inv.productList?.isStoreOnly) {
+            console.log(
+              `ℹ️ [syncWebInventories] Skipping Shopify sync for store-only product. InventoryId=${inventory.id}`,
+            );
+            continue;
+          }
+
+          const activeVariants = await this.productRepo.variantModel.findAll({
+            where: {
+              productId: inventory.productId,
+              store_id: store.store_id,
+              status: 1,
+              quantity: { [Op.gt]: 0 },
+            },
+            transaction,
+          });
+
+          if (activeVariants.length === 0) {
+            if (inventory.shopifyId) {
+              console.log(
+                `🧹 [syncWebInventories] Deleting Shopify product ${inventory.shopifyId} (no active variants)`,
+              );
+              await shopifyService.deleteItems([inventory.shopifyId], inventory.productId);
+              await inventory.update({ shopifyId: null, shopifyStatus: null }, { transaction });
+            }
+            continue;
+          }
+
+          if (inventory.shopifyId) {
+            console.log(`ℹ️ [syncWebInventories] Skipping already synced inventory: ${inventory.id}`);
+            continue;
+          }
+
+          console.log(`🌐 [syncWebInventories] SYNCING NEW PRODUCT → inventoryId=${inventory.id}`);
+
+          let template: any = null;
+          if (inventory.category) {
+            template = await this.productRepo.templateModel.findByPk(inventory.category, { transaction });
+          }
+
+          const payload = buildShopifyPayload(inventory, activeVariants, store, template);
+          const result = await shopifyService.syncProduct(payload);
+
+          if (result?.product?.id) {
+            await inventory.update(
+              {
+                shopifyId: String(result.product.id),
+                shopifyStatus: 'Listed',
+              },
+              { transaction },
+            );
+
+            await this.persistVariantIds.persistShopifyVariantIds({
+              shopifyResult: result,
+              localVariants: activeVariants,
+              isWeb: true,
+              transaction,
+            });
+
+            console.log(`✅ [syncWebInventories] Synced inventory ${inventory.id} -> Shopify ${result.product.id}`);
+          }
+        } catch (err: any) {
+          console.error(`❌ [syncWebInventories] Error syncing inventory ${inventory.id}:`, err.message);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    } catch (err: any) {
+      console.error('❌ [syncWebInventories] Fatal error:', err.message);
     }
   };
 }

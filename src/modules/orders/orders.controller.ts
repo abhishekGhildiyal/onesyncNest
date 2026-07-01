@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 
 import { ApiTags } from '@nestjs/swagger';
@@ -7,6 +7,7 @@ import { AgentType } from 'src/common/decorators/agent-type.decorator';
 import { RequiredPermissions } from 'src/common/decorators/permission.decorator';
 import { AgentGuard } from 'src/common/guards/agent.guard';
 import { AuthGuard } from 'src/common/guards/auth.guard';
+import { ConsumerGuard } from 'src/common/guards/consumer.guard';
 import { PermissionGuard } from 'src/common/guards/permission.guard';
 import type { getUser } from 'src/common/interfaces/common/getUser';
 import * as DTO from './dto/orders.dto';
@@ -49,7 +50,7 @@ export class OrdersController {
   @UseGuards(PermissionGuard)
   @RequiredPermissions(PERMISSIONS.AccessOrder)
   @Get('allOrderItems/price/:orderId')
-  getAllOrderItemsPrice(@Param('orderId') param: DTO.OrderIdParamDto) {
+  getAllOrderItemsPrice(@Param() param: DTO.OrderIdParamDto) {
     return this.ordersService.getAllOrderItemsPrice(param);
   }
 
@@ -65,11 +66,12 @@ export class OrdersController {
   @AgentType('is_sales_agent', false)
   @RequiredPermissions(PERMISSIONS.OpenRequest)
   @Get('markReview/:orderId')
-  markReview(@Param('orderId') orderId: DTO.OrderIdParamDto, @GetUser() user: getUser) {
+  markReview(@Param() orderId: DTO.OrderIdParamDto, @GetUser() user: getUser) {
     return this.ordersService.markReview(orderId, user);
   }
 
   @Post('createManualOrder')
+  @HttpCode(201)
   createManualOrder(@GetUser() user: getUser, @Body() body: DTO.CreateManualOrderDto) {
     return this.ordersService.createManualOrder(user, body);
   }
@@ -104,13 +106,37 @@ export class OrdersController {
   }
 
   @Get('getNotes/:orderId')
-  getNotes(@Param('orderId') param: DTO.OrderIdParamDto) {
+  getNotes(@Param() param: DTO.OrderIdParamDto) {
     return this.ordersService.getNotes(param);
   }
 
   @Post('store-confirm/:orderId')
-  storeConfirm(@Param() param: DTO.OrderIdParamDto, @GetUser() user: getUser, @Body() body: any) {
+  storeConfirm(
+    @Param() param: DTO.OrderIdParamDto,
+    @GetUser() user: getUser,
+    @Body() body: DTO.StoreConfirmDto,
+  ) {
     return this.ordersService.storeConfirm(param, user, body);
+  }
+
+  @Get('cancel/:orderId')
+  cancelOrder(@Param() param: DTO.OrderIdParamDto) {
+    return this.ordersService.cancelOrder(param);
+  }
+
+  @Post('paymentNote')
+  paymentNote(@Body() body: DTO.PaymentNoteDto) {
+    return this.ordersService.paymentNote(body);
+  }
+
+  @Get('paymentNote/:orderId')
+  getPaymentNote(@Param() param: DTO.OrderIdParamDto) {
+    return this.ordersService.getPaymentNote(param);
+  }
+
+  @Get('shortage/:orderId')
+  getShortage(@GetUser() user: getUser, @Param() param: DTO.OrderIdParamDto) {
+    return this.ordersService.getShortage(user, param);
   }
 
   /**
@@ -156,7 +182,7 @@ export class OrdersController {
 
   @Post('/syncStock')
   syncStock(@Body() body: DTO.SyncStockDto) {
-    return this.ordersService.syncStock;
+    return this.ordersService.syncStock(body);
   }
 
   @Post('syncFullStock')
@@ -164,53 +190,88 @@ export class OrdersController {
     return this.ordersService.syncFullStock(body);
   }
 
+  @Post('syncBeforeConfirm')
+  syncAndDeleteConfirm(@Body() body: DTO.SyncBeforeConfirmDto) {
+    return this.ordersService.syncAndDeleteConfirm(body);
+  }
+
   /**
   |--------------------------------------------------
   | # Consumer Routes
   |--------------------------------------------------
   */
+  @UseGuards(ConsumerGuard)
   @Post('accessList')
   accessList(@GetUser() user: getUser, @Body() body: DTO.AccessListDto) {
     return this.ordersService.accessList(user, body);
   }
 
+  @UseGuards(ConsumerGuard)
   @Post('getAll')
   allOrders(@GetUser() user: getUser, @Body() body: DTO.GetOrdersDto) {
     return this.ordersService.allOrders(user, body);
   }
 
+  @UseGuards(ConsumerGuard)
   @Post('updateAccessBrandQty')
   updateAccessBrandQty(@Body() body: DTO.UpdateAccessVariantQuantityDto) {
     return this.ordersService.updateAccessVarientQuantity(body);
   }
 
+  @UseGuards(ConsumerGuard)
   @Post('updateBrandQty')
   updateBrandQty(@Body() body: DTO.UpdateQuantityDto) {
     return this.ordersService.updateVarientQuantity(body);
   }
 
+  @UseGuards(ConsumerGuard)
+  @Post('setItemPriceConsumer')
+  setItemPriceConsumer(@GetUser() user: getUser, @Body() body: DTO.SetItemPriceDto) {
+    return this.ordersService.setItemPriceConsumer(user, body);
+  }
+
+  @UseGuards(ConsumerGuard)
   @Post('saveAsDraft')
+  @HttpCode(201)
   saveOrderAsDraft(@GetUser() user: getUser, @Body() body: DTO.saveAsDraftDto) {
     return this.ordersService.saveOrderAsDraft(user, body);
   }
 
+  @UseGuards(ConsumerGuard)
+  @Get('sellingPriceFloater/:orderId')
+  sellingPriceFloater(@Param() param: DTO.OrderIdParamDto) {
+    return this.ordersService.sellingPriceFloater(param);
+  }
+
+  @UseGuards(ConsumerGuard)
   @Post('createOrder')
   createOrder(@GetUser() user: getUser, @Body() body: DTO.CreateOrderDto) {
     return this.ordersService.createOrder(user, body);
   }
 
+  @UseGuards(ConsumerGuard)
   @Post('updateOrderBrands')
   updateOrderBrands(@Body() body: DTO.UpdateOrderBrandsDto) {
-    return this.ordersService.updateOrderBrands(body); // selected: true
+    return this.ordersService.updateOrderBrands(body);
   }
 
+  @UseGuards(ConsumerGuard)
   @Post(':orderId/confirm')
   confirmOrder(
-    @Param('orderId') orderId: number,
+    @Param('orderId', ParseIntPipe) orderId: number,
     @GetUser() user: getUser,
-    @Body() body: any,
-    @Headers('authorization') token: string,
+    @Body() body: DTO.ConfirmOrderDto,
   ) {
-    return this.ordersService.confirmOrder(orderId, user, body, token);
+    return this.ordersService.confirmOrder(orderId, user, body);
+  }
+
+  @UseGuards(ConsumerGuard)
+  @Post('confirmOrder/:orderId')
+  confirmOrderLegacy(
+    @Param('orderId', ParseIntPipe) orderId: number,
+    @GetUser() user: getUser,
+    @Body() body: DTO.ConfirmOrderDto,
+  ) {
+    return this.ordersService.confirmOrder(orderId, user, body);
   }
 }

@@ -1,4 +1,7 @@
 import { AutoIncrement, Column, DataType, Model, PrimaryKey, Table } from 'sequelize-typescript';
+import { Inventory } from '../inventory/inventory';
+import { ProductList } from '../product/productList';
+import { User } from '../user/user';
 
 @Table({
   tableName: 'variant',
@@ -6,7 +9,7 @@ import { AutoIncrement, Column, DataType, Model, PrimaryKey, Table } from 'seque
   createdAt: 'created_on',
   updatedAt: false,
   indexes: [
-    { name: 'idx_variant_store_id', fields: ['storeId'] },
+    { name: 'idx_variant_store_id', fields: ['store_id'] },
     { name: 'idx_variant_location', fields: ['location'] },
   ],
 })
@@ -173,7 +176,7 @@ export class Variant extends Model {
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  declare product_id: number;
+  declare productId: number;
 
   @Column({
     type: DataType.STRING,
@@ -223,4 +226,77 @@ export class Variant extends Model {
     type: DataType.INTEGER,
   })
   declare user_id: number;
+
+  @Column({
+    type: DataType.STRING,
+    field: 'migration_id',
+  })
+  declare migrationId: string;
+
+  @Column({
+    type: DataType.BIGINT,
+    field: 'web_variant_id',
+  })
+  declare webVariantId: number;
+
+  @Column({
+    type: DataType.BIGINT,
+    field: 'web_inventory_item_id',
+  })
+  declare webInventoryItemId: number;
+
+  @Column({
+    type: DataType.STRING,
+    field: 'sold_source',
+    defaultValue: '0',
+  })
+  declare soldSource: string;
+
+  @Column({
+    type: DataType.INTEGER,
+    field: 'channel_id',
+  })
+  declare channelId: number;
+
+  @Column({
+    type: DataType.DOUBLE,
+  })
+  declare discount: number;
+
+  @Column({
+    type: DataType.INTEGER,
+    field: 'store_location_mapping_id',
+  })
+  declare storeLocationMappingId: number;
+
+  @Column({ type: DataType.STRING, field: 'variant_image' })
+  declare variantImage: string;
+
+  @Column({ type: DataType.STRING, field: 'item_tags' })
+  declare itemTags: string;
+
+  @Column({ type: DataType.BOOLEAN, field: 'linked_image', defaultValue: false })
+  declare linkedImage: boolean;
+
+  @Column({ type: DataType.STRING, field: 'local_order_no' })
+  declare localOrderNo: string;
+
+  @Column({ type: DataType.STRING, field: 'vendor_order_no' })
+  declare vendorOrderNo: string;
+
+  @Column({ type: DataType.INTEGER, field: 'purchase_order_id' })
+  declare purchaseOrderId: number;
+
+  @Column({ type: DataType.BOOLEAN, field: 'is_payout_custom', defaultValue: false })
+  declare isPayoutCustom: boolean;
+
+  @Column({ type: DataType.STRING, field: 'payout_manual', defaultValue: '0' })
+  declare payoutManual: string;
+
+  @Column({ type: DataType.STRING, field: 'compare_at_price' })
+  declare compare_at_price: string;
+
+  declare inventory?: Inventory;
+  declare product?: ProductList;
+  declare user?: User;
 }

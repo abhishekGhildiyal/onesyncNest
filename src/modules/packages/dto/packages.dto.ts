@@ -66,10 +66,14 @@ export class MarkAllDto {
 
 export class ShortageQuantityDto {
   @IsNumber()
-  itemId: number;
+  packageOrderId: number;
 
   @IsArray()
-  shortageQuantities: any[];
+  itemsArr: {
+    packageItemId: number;
+    variants: { size: string; receivedQuantity?: number; selectedQuantity?: number }[];
+    isItemReceived?: number | boolean;
+  }[];
 }
 
 export class PackageSlipDto {

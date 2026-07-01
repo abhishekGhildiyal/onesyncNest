@@ -9,6 +9,7 @@ import {
 } from 'sequelize-typescript';
 
 @Table({
+  tableName: 'customers',
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: false,
@@ -52,4 +53,12 @@ export class Customers extends Model {
     field: 'user_secret_key',
   })
   declare password: string;
+
+  @Unique
+  @Column({
+    type: DataType.BIGINT,
+    allowNull: true,
+    field: 'shopify_customer_id',
+  })
+  declare shopify_customer_id: number;
 }

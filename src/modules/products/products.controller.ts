@@ -1,8 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 
 import { ApiTags } from '@nestjs/swagger';
+import { PERMISSIONS } from 'src/common/constants/permissions';
+import { RequiredPermissions } from 'src/common/decorators/permission.decorator';
 import { AuthGuard } from 'src/common/guards/auth.guard';
+import { PermissionGuard } from 'src/common/guards/permission.guard';
 import type { getUser } from 'src/common/interfaces/common/getUser';
 import * as DTO from './dto/product.dto';
 import { ProductsService } from './products.service';
@@ -24,8 +28,8 @@ export class ProductsController {
   }
 
   @Post('consumerBrandProducts')
-  getAccessPackageBrandProducts(@Param() params: DTO.OrderIdParamDto, @Body() body: DTO.BrandProductsDto) {
-    return this.productsService.getAccessPackageBrandProducts(params, body);
+  getAccessPackageBrandProducts(@Req() req: Request, @Body() body: DTO.BrandProductsDto) {
+    return this.productsService.getAccessPackageBrandProducts(req, body);
   }
 
   //   -------------------------------------
@@ -44,26 +48,37 @@ export class ProductsController {
     return this.productsService.AllCustomers(user, query);
   }
 
+  @UseGuards(PermissionGuard)
+  @RequiredPermissions(PERMISSIONS.AccessOrder)
   @Post('createPackage')
+  @HttpCode(201)
   createPackage(@GetUser() user: getUser, @Body() body: any) {
     return this.productsService.createPackage(user, body);
   }
 
+  @UseGuards(PermissionGuard)
+  @RequiredPermissions(PERMISSIONS.AccessOrder)
   @Post('linkCustomer')
   linkCustomer(@GetUser() user: getUser, @Body() body: any) {
     return this.productsService.linkCustomer(user, body);
   }
 
+  @UseGuards(PermissionGuard)
+  @RequiredPermissions(PERMISSIONS.AccessOrder)
   @Post('updatePackage')
   updatePackage(@Body() body: any) {
     return this.productsService.updatePackage(body);
   }
 
+  @UseGuards(PermissionGuard)
+  @RequiredPermissions(PERMISSIONS.AccessOrder)
   @Get('package/customers/:packageId')
   getPackageCustomers(@Param('packageId') packageId: number) {
     return this.productsService.getPackageCustomers(packageId);
   }
 
+  @UseGuards(PermissionGuard)
+  @RequiredPermissions(PERMISSIONS.AccessOrder)
   @Post('revokeAccess')
   revokeAccess(@Body() body: any) {
     return this.productsService.revokeAccess(body);

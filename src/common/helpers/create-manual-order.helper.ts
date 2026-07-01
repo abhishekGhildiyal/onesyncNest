@@ -438,7 +438,7 @@ export class ManualOrderHelperService {
 
             const finalHtml = html.replace(/<!-- CREDENTIALS_PLACEHOLDER -->/g, credentialsSection);
 
-            return this.mailService.sendMail(data.to, finalHtml, subject);
+            return this.mailService.sendMail(data.to, finalHtml, subject, store.store_id);
           } catch (err) {
             if (data) {
               console.error(`❌ Email send failed for ${data.to}:`, err.message);

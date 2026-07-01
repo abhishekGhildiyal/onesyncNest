@@ -49,6 +49,10 @@ export class BrandUpdateDto {
    BRAND PRODUCTS
 ========================= */
 export class BrandProductsDto {
+  @IsOptional()
+  @IsInt()
+  orderId?: number;
+
   @IsArray()
   @ArrayMinSize(1)
   @IsInt({ each: true })

@@ -1,14 +1,21 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Op } from 'sequelize';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import type { Request } from 'express';
+import { Op, col, fn, where } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { getUser } from 'src/common/interfaces/common/getUser';
 import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
+import { StoreRepository } from 'src/db/repository/store.repository';
 import { UserRepository } from 'src/db/repository/user.repository';
 import { BRAND_STATUS, PACKAGE_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
+import { generateAlphaNumericPassword, hashPasswordMD5 } from '../../common/helpers/hash.helper';
 import { generateOrderId } from '../../common/helpers/order-generator.helper';
+import { generatePackageLink } from '../../common/helpers/package-link.helper';
 import { sortSizes } from '../../common/helpers/sort-sizes.helper';
+import { TemplatesSlug } from '../mail/mail.constants';
+import { MailService } from '../mail/mail.service';
+import { SocketGateway } from '../socket/socket.gateway';
 import * as DTO from './dto/product.dto';
 
 @Injectable()
@@ -17,6 +24,9 @@ export class ProductsService {
     private readonly productRepo: ProductRepository,
     private readonly pkgRepo: PackageRepository,
     private readonly userRepo: UserRepository,
+    private readonly storeRepo: StoreRepository,
+    private readonly mailService: MailService,
+    private readonly socketGateway: SocketGateway,
     private sequelize: Sequelize,
   ) {}
 
@@ -70,19 +80,19 @@ export class ProductsService {
       // STEP 3: Fetch active variants with stock
       const variants = await this.productRepo.variantModel.findAll({
         where: {
-          product_id: { [Op.in]: productIds },
+          productId: { [Op.in]: productIds },
           status: 1,
           quantity: { [Op.gt]: 0 },
           option1Value: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] },
         },
-        attributes: ['id', 'product_id'],
+        attributes: ['id', 'productId'],
       });
 
       if (!variants.length) {
         return { success: true, message: AllMessages.FTCH_BRANDS, data: {} };
       }
 
-      const validProductIds = new Set(variants.map((v) => v.get('product_id')));
+      const validProductIds = new Set(variants.map((v) => v.get('productId')));
 
       // STEP 4: Filter products having valid variants
       const filteredProducts = products.filter((p) => validProductIds.has(p.get('product_id')));
@@ -201,8 +211,8 @@ export class ProductsService {
       const variantGroup = new Map();
 
       for (const v of variants) {
-        if (!variantGroup.has(v.product_id)) variantGroup.set(v.product_id, []);
-        variantGroup.get(v.product_id).push(v);
+        if (!variantGroup.has(v.productId)) variantGroup.set(v.productId, []);
+        variantGroup.get(v.productId).push(v);
       }
 
       const groupedByBrand: any = {};
@@ -325,10 +335,11 @@ export class ProductsService {
   /**
    * @description Get access package brand products
    */
-  async getAccessPackageBrandProducts(params: DTO.OrderIdParamDto, body: DTO.BrandProductsDto) {
+  async getAccessPackageBrandProducts(req: Request, body: DTO.BrandProductsDto) {
     try {
-      const { orderId } = params;
-      const { brandIds = [] } = body;
+      const { orderId: orderIdParam } = req.params as { orderId?: string | number };
+      const { brandIds = [], orderId: orderIdBody } = body;
+      const orderId = orderIdBody ?? orderIdParam;
 
       if (!Array.isArray(brandIds) || brandIds.length === 0) {
         throw new BadRequestException({
@@ -511,7 +522,9 @@ export class ProductsService {
     try {
       const { type, brandId, brandName } = body;
       const brand = await this.productRepo.brandModel.findByPk(brandId);
-      if (!brand) throw new NotFoundException(AllMessages.BRAND_NF);
+      if (!brand) {
+        throw new BadRequestException({ message: AllMessages.BRAND_NF });
+      }
 
       if (brandName) {
         const existingBrand = await this.productRepo.brandModel.findOne({
@@ -526,7 +539,7 @@ export class ProductsService {
 
       return { success: true, message: AllMessages.BRAND_UPDT };
     } catch (err) {
-      if (err instanceof BadRequestException || err instanceof NotFoundException) throw err;
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
     }
   }
@@ -549,7 +562,7 @@ export class ProductsService {
       // ================== STEP 1: PRODUCTS ==================
       const products = await this.productRepo.productListModel.findAll({
         where: {
-          store_id: storeId,
+          storeId: storeId,
           brand_id: { [Op.in]: brandIds },
         },
         attributes: ['product_id', 'itemName', 'image', 'brand_id', 'type'],
@@ -569,7 +582,7 @@ export class ProductsService {
       // ================== STEP 2: VARIANTS ==================
       const variants = await this.productRepo.variantModel.findAll({
         where: {
-          product_id: { [Op.in]: productIds },
+          productId: { [Op.in]: productIds },
           status: 1,
           quantity: { [Op.gt]: 0 },
           // relaxed filter (most common issue)
@@ -577,7 +590,7 @@ export class ProductsService {
             [Op.ne]: null,
           },
         },
-        attributes: ['id', 'quantity', 'option1Value', 'product_id'],
+        attributes: ['id', 'quantity', 'option1Value', 'productId'],
         raw: true,
       });
 
@@ -596,10 +609,10 @@ export class ProductsService {
       const variantGroup = new Map<number, any[]>();
 
       for (const v of variants) {
-        if (!variantGroup.has(v.product_id)) {
-          variantGroup.set(v.product_id, []);
+        if (!variantGroup.has(v.productId)) {
+          variantGroup.set(v.productId, []);
         }
-        variantGroup.get(v.product_id)!.push(v);
+        variantGroup.get(v.productId)!.push(v);
       }
 
       // ================== STEP 5: GROUP PRODUCTS ==================
@@ -684,70 +697,108 @@ export class ProductsService {
       const { storeId, userId } = user;
       const { packageName, brands = [] } = body;
 
-      const order_id = await generateOrderId({
-        storeId,
-        prefix: 'PKG',
-        model: this.pkgRepo.accessPackageOrderModel,
-        draft: false,
+      const store = await this.storeRepo.storeModel.findByPk(storeId, {
+        attributes: ['store_code', 'store_name', 'store_id'],
         transaction: t,
       });
 
-      const pkg = await this.pkgRepo.accessPackageOrderModel.create(
+      if (!store) {
+        throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+      }
+
+      const existingName = await this.pkgRepo.accessPackageOrderModel.findOne({
+        where: { packageName },
+        attributes: ['packageName'],
+        transaction: t,
+      });
+
+      if (existingName) {
+        throw new BadRequestException({
+          success: false,
+          message: 'Access list with same name already exists.',
+        });
+      }
+
+      const accessPackageOrder = await this.pkgRepo.accessPackageOrderModel.create(
         {
-          packageName,
           user_id: userId,
-          order_id,
+          order_id: await generateOrderId({
+            storeId: store.store_id,
+            prefix: store.store_code,
+            model: this.pkgRepo.accessPackageOrderModel,
+            draft: false,
+            transaction: t,
+          }),
           store_id: storeId,
           status: PACKAGE_STATUS.ACCESS,
+          packageName,
         },
         { transaction: t },
       );
 
-      for (const b of brands) {
-        const pBrand = await this.pkgRepo.accessPackageBrandModel.create(
-          {
-            package_id: pkg.id,
-            brand_id: b.brand_id,
-            selected: true,
-          },
+      const brandIds = brands.map((b: any) => b.brand_id).filter(Boolean);
+      const validBrands = await this.productRepo.brandModel.findAll({
+        where: { id: brandIds },
+        transaction: t,
+      });
+      const brandIdSet = new Set(validBrands.map((b) => b.id));
+
+      const brandPayload = brands
+        .filter((b: any) => brandIdSet.has(b.brand_id) && (b.items?.length ?? 0) > 0)
+        .map((b: any) => ({
+          package_id: accessPackageOrder.id,
+          brand_id: b.brand_id,
+        }));
+
+      const accessPackageBrands = await this.pkgRepo.accessPackageBrandModel.bulkCreate(brandPayload, {
+        transaction: t,
+        returning: true,
+      });
+
+      const brandIdToPkgBrandId = new Map<number, number>();
+      accessPackageBrands.forEach((b) => brandIdToPkgBrandId.set(b.brand_id, b.id));
+
+      const itemRecords: Array<{ packageBrand_id: number; product_id: number; quantity: null }> = [];
+
+      for (const brand of brands) {
+        if (!brandIdSet.has(brand.brand_id)) continue;
+
+        const packageBrandId = brandIdToPkgBrandId.get(brand.brand_id);
+        if (!packageBrandId) continue;
+
+        for (const item of brand.items || []) {
+          const { product_id } = item;
+          if (!product_id) continue;
+
+          itemRecords.push({
+            packageBrand_id: packageBrandId,
+            product_id,
+            quantity: null,
+          });
+        }
+      }
+
+      if (itemRecords.length > 0) {
+        await this.pkgRepo.accessPackageBrandItemsModel.bulkCreate(
+          itemRecords.map((r) => ({
+            packageBrand_id: r.packageBrand_id,
+            product_id: r.product_id,
+            quantity: r.quantity,
+          })),
           { transaction: t },
         );
-
-        for (const item of b.items || []) {
-          const pItem = await this.pkgRepo.accessPackageBrandItemsModel.create(
-            {
-              product_id: item.product_id,
-              packageBrand_id: pBrand.id,
-              price: item.price,
-            },
-            { transaction: t },
-          );
-
-          if (item.variants && Array.isArray(item.variants)) {
-            for (const v of item.variants) {
-              await this.pkgRepo.accessPackageBrandItemsCapacityModel.create(
-                {
-                  item_id: pItem.id,
-                  variant_id: v.variantId,
-                  maxCapacity: v.maxCapacity,
-                  selectedCapacity: 0,
-                },
-                { transaction: t },
-              );
-            }
-          }
-        }
       }
 
       await t.commit();
       return {
         success: true,
-        message: 'Package created successfully',
-        data: pkg,
+        message: AllMessages.PAKG_CRTD,
+        data: { package_id: accessPackageOrder.id },
       };
     } catch (err) {
       await t.rollback();
-      console.error(err);
+      console.error('❌ createPackage error:', err);
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
     }
   }
@@ -870,20 +921,223 @@ export class ProductsService {
    */
   async linkCustomer(user: any, body: any) {
     const t = await this.sequelize.transaction();
+
     try {
+      const { storeId } = user;
       const { packageOrderId, customers = [], showPrices } = body;
+
       const existingPackage = await this.pkgRepo.accessPackageOrderModel.findByPk(packageOrderId, {
+        include: [
+          {
+            model: this.storeRepo.storeModel,
+            as: 'store',
+            attributes: ['store_code', 'store_name', 'store_id', 'store_icon'],
+          },
+        ],
         transaction: t,
       });
-      if (!existingPackage) throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
 
-      // Implementation of linking logic... (as per legacy)
-      // Including bulk creating users if they don't exist
+      if (!existingPackage) {
+        throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
+      }
+
+      const existingUsers = await this.userRepo.userModel.findAll({
+        where: where(fn('LOWER', col('email')), {
+          [Op.in]: customers.map((email: string) => email.toLowerCase()),
+        }),
+        transaction: t,
+      });
+
+      const emailToUserMap = new Map(existingUsers.map((u) => [u.email.toLowerCase(), u]));
+      const newUserEmails = customers.filter((email: string) => !emailToUserMap.has(email.toLowerCase()));
+
+      const generatedPassword = generateAlphaNumericPassword();
+      const hashedPassword = hashPasswordMD5(generatedPassword);
+
+      const newUsers = newUserEmails.map((email: string) => ({
+        email,
+        firstName: email.split('@')[0],
+        password: hashedPassword,
+        email_verified: '1',
+        onboarding_status: true,
+      }));
+
+      if (newUsers.length > 0) {
+        const createdUsers = await this.userRepo.userModel.bulkCreate(newUsers, {
+          transaction: t,
+          returning: true,
+        });
+        createdUsers.forEach((u) => emailToUserMap.set(u.email.toLowerCase(), u));
+      }
+
+      const [consumerRole] = await this.userRepo.roleModel.findOrCreate({
+        where: { roleName: 'Consumer' },
+        defaults: { roleName: 'Consumer', status: 1 },
+        transaction: t,
+      });
+
+      const userMappings: Array<{ userId: number; roleId: number; storeId: number; status: number }> = [];
+      const packageCustomerEntries: Array<{ package_id: number; customer_id: number }> = [];
+
+      for (const email of customers) {
+        const mappedUser = emailToUserMap.get(email.toLowerCase());
+        if (!mappedUser) continue;
+
+        userMappings.push({
+          userId: mappedUser.id,
+          roleId: consumerRole.roleId,
+          storeId: existingPackage.store_id,
+          status: 1,
+        });
+
+        packageCustomerEntries.push({
+          package_id: packageOrderId,
+          customer_id: mappedUser.id,
+        });
+      }
+
+      const existingMappings = await this.userRepo.userStoreMappingModel.findAll({
+        where: {
+          userId: userMappings.map((m) => m.userId),
+          roleId: consumerRole.roleId,
+        },
+        transaction: t,
+      });
+
+      const existingSet = new Set(
+        existingMappings.map((m) => `${m.userId}-${m.roleId}-${m.status}-${m.storeId}`),
+      );
+
+      const newMappings = userMappings.filter(
+        (m) => !existingSet.has(`${m.userId}-${m.roleId}-${m.status}-${m.storeId}`),
+      );
+
+      if (newMappings.length > 0) {
+        await this.userRepo.userStoreMappingModel.bulkCreate(newMappings, { transaction: t });
+      }
+
+      const alreadyLinkedCustomers = await this.pkgRepo.accessPackageCustomerModel.findAll({
+        where: {
+          package_id: packageOrderId,
+          customer_id: packageCustomerEntries.map((e) => e.customer_id),
+        },
+        transaction: t,
+      });
+
+      const existingCustomerSet = new Set(
+        alreadyLinkedCustomers.map((e) => `${e.package_id}-${e.customer_id}`),
+      );
+
+      const newPackageCustomerEntries = packageCustomerEntries.filter(
+        (e) => !existingCustomerSet.has(`${e.package_id}-${e.customer_id}`),
+      );
+
+      if (newPackageCustomerEntries.length > 0) {
+        await this.pkgRepo.accessPackageCustomerModel.bulkCreate(newPackageCustomerEntries, {
+          transaction: t,
+          ignoreDuplicates: true,
+        });
+      }
+
+      existingPackage.showPrices = showPrices;
+      await existingPackage.save({ transaction: t });
 
       await t.commit();
+
+      const store = (existingPackage as any).store;
+      const mailPayloads = customers
+        .map((email: string) => {
+          this.socketGateway.server.emit(`fetchAccess-${email}`);
+
+          const mappedUser = emailToUserMap.get(email.toLowerCase());
+          if (!mappedUser) return null;
+
+          return {
+            to: email,
+            packageLink: generatePackageLink('consumer/access-list/', packageOrderId, email),
+            storeName: store?.store_name,
+            userEmail: email,
+            password: newUserEmails.includes(email) ? generatedPassword : 'Your existing password',
+            frontendURL: process.env.FRONTEND_URL,
+            supportEmail: process.env.SUPPORT_EMAIL,
+            project: process.env.PROJECT_NAME,
+            storeLogo: store?.store_icon,
+          };
+        })
+        .filter(Boolean);
+
+      setImmediate(() => {
+        const emailTasks: Promise<unknown>[] = [];
+
+        for (const data of mailPayloads) {
+          if (!data) continue;
+
+          try {
+            const { html, subject } = this.mailService.getPopulatedTemplate(TemplatesSlug.NewPackage, {
+              frontendURL: data.frontendURL,
+              packageLink: data.packageLink,
+              storeName: data.storeName,
+              userEmail: data.userEmail,
+              password: data.password,
+              supportEmail: data.supportEmail,
+              project: data.project,
+              oneSyncLogo: process.env.ONE_SYNC_LOGO,
+              storeLogo: data.storeLogo,
+            });
+
+            if (newUserEmails.includes(data.userEmail)) {
+              const { html: credHtml, subject: credSubject } = this.mailService.getPopulatedTemplate(
+                TemplatesSlug.NewPackageCredentials,
+                {
+                  frontendURL: data.frontendURL,
+                  packageLink: data.packageLink,
+                  storeName: data.storeName,
+                  userEmail: data.userEmail,
+                  password: data.password,
+                  supportEmail: data.supportEmail,
+                  project: data.project,
+                  oneSyncLogo: process.env.ONE_SYNC_LOGO,
+                  storeLogo: data.storeLogo,
+                },
+              );
+
+              emailTasks.push(
+                this.mailService.sendMail(data.to, credHtml, credSubject, storeId).catch((err) => {
+                  console.error(`❌ Email send failed for ${data.to}:`, err.message);
+                  return { success: false, to: data.to, error: err.message };
+                }),
+              );
+            }
+
+            const accessListHtml = html.replace(/<!-- CREDENTIALS_PLACEHOLDER -->/g, '');
+            emailTasks.push(
+              this.mailService.sendMail(data.to, accessListHtml, subject, storeId).catch((err) => {
+                console.error(`❌ Email send failed for ${data.to}:`, err.message);
+                return { success: false, to: data.to, error: err.message };
+              }),
+            );
+          } catch (err: any) {
+            console.error(`❌ Preparation error for ${data.to}:`, err.message);
+            emailTasks.push(Promise.resolve({ success: false, to: data.to, error: err.message }));
+          }
+        }
+
+        Promise.all(emailTasks)
+          .then((results) => {
+            const failed = results.filter((r: any) => r && r.success === false);
+            if (failed.length) {
+              console.warn(`❌ ${failed.length} email(s) failed:`);
+              failed.forEach((f: any) => console.warn(` ↳ ${f.to}: ${f.error}`));
+            }
+          })
+          .catch((err) => console.error('❌ Unexpected mail error:', err));
+      });
+
       return { success: true, message: AllMessages.CSTMR_LNKD };
     } catch (err) {
       await t.rollback();
+      console.error('❌ linkCustomer error:', err);
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
     }
   }
@@ -892,22 +1146,215 @@ export class ProductsService {
     const t = await this.sequelize.transaction();
     try {
       const { packageId, brands = [], packageName } = body;
+
       const existingPackage = await this.pkgRepo.accessPackageOrderModel.findByPk(packageId, {
         transaction: t,
       });
-      if (!existingPackage) throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
 
-      if (packageName) {
-        existingPackage.packageName = packageName;
-        await existingPackage.save({ transaction: t });
+      if (!existingPackage) {
+        throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
       }
 
-      // Re-migration of brands/items... (as per legacy)
+      if (packageName) {
+        const nameExists = await this.pkgRepo.accessPackageOrderModel.findOne({
+          where: {
+            packageName,
+            id: { [Op.ne]: packageId },
+          },
+          include: [
+            {
+              model: this.pkgRepo.accessPackageCustomerModel,
+              as: 'customers',
+              attributes: ['customer_id'],
+            },
+          ],
+          transaction: t,
+        });
+
+        if (nameExists) {
+          throw new BadRequestException({
+            success: false,
+            message: 'The package with this name already exists.',
+          });
+        }
+
+        existingPackage.packageName = packageName;
+        await existingPackage.save({ transaction: t });
+
+        const linkedCustomers = await this.pkgRepo.accessPackageCustomerModel.findAll({
+          where: { package_id: packageId },
+          attributes: ['customer_id'],
+          transaction: t,
+        });
+
+        for (const c of linkedCustomers) {
+          this.socketGateway.server.emit(`fetchAccess-${c.customer_id}`);
+        }
+      }
+
+      if (brands.length > 0) {
+        const accessBrands = await this.pkgRepo.accessPackageBrandModel.findAll({
+          where: { package_id: packageId },
+          attributes: ['id'],
+          transaction: t,
+        });
+
+        const packageBrandIds = accessBrands.map((b) => b.id);
+
+        if (packageBrandIds.length > 0) {
+          const brandItems = await this.pkgRepo.accessPackageBrandItemsModel.findAll({
+            where: { packageBrand_id: packageBrandIds },
+            attributes: ['id'],
+            transaction: t,
+          });
+
+          const itemIds = brandItems.map((item) => item.id);
+
+          if (itemIds.length > 0) {
+            await Promise.all([
+              this.pkgRepo.accessPackageBrandItemsQtyModel.destroy({
+                where: { item_id: itemIds },
+                transaction: t,
+              }),
+              this.pkgRepo.accessPackageBrandItemsCapacityModel.destroy({
+                where: { item_id: itemIds },
+                transaction: t,
+              }),
+            ]);
+          }
+
+          await Promise.all([
+            this.pkgRepo.accessPackageBrandItemsModel.destroy({
+              where: { packageBrand_id: packageBrandIds },
+              transaction: t,
+            }),
+            this.pkgRepo.accessPackageBrandModel.destroy({
+              where: { id: packageBrandIds },
+              transaction: t,
+            }),
+          ]);
+        }
+
+        const itemRecords: Array<{
+          tempId: string;
+          packageBrand_id: number;
+          product_id: number;
+          quantity: number;
+        }> = [];
+        const variantRecords: Array<{ variant_id: number; maxCapacity: number | null; tempId: string }> = [];
+        const sizeQtyArr: Array<{ variant_size: string; maxCapacity: number | null; tempId: string }> = [];
+
+        for (const brand of brands) {
+          const { brand_id, items = [] } = brand;
+          if (!brand_id || items.length === 0) continue;
+
+          const brandExists = await this.productRepo.brandModel.findByPk(brand_id, {
+            transaction: t,
+          });
+          if (!brandExists) throw new Error(`Invalid brand_id: ${brand_id}`);
+
+          const accessPackageBrand = await this.pkgRepo.accessPackageBrandModel.create(
+            { package_id: packageId, brand_id },
+            { transaction: t },
+          );
+
+          for (const item of items) {
+            const { product_id, variants = [], mainVariants = [] } = item;
+            if (!product_id) continue;
+
+            const tempId = `${accessPackageBrand.id}-${product_id}-${Math.random()}`;
+            const totalQuantity = variants.reduce(
+              (sum: number, v: any) => sum + (Number(v.maxCapacity) || 0),
+              0,
+            );
+
+            itemRecords.push({
+              tempId,
+              packageBrand_id: accessPackageBrand.id,
+              product_id,
+              quantity: totalQuantity,
+            });
+
+            for (const variant of variants) {
+              const { variantId, maxCapacity } = variant;
+              if (!variantId) continue;
+
+              variantRecords.push({
+                variant_id: variantId,
+                maxCapacity: maxCapacity || null,
+                tempId,
+              });
+            }
+
+            for (const sizeQty of mainVariants) {
+              const { size, quantity } = sizeQty;
+              sizeQtyArr.push({
+                variant_size: size,
+                maxCapacity: quantity || null,
+                tempId,
+              });
+            }
+          }
+        }
+
+        const createdItems = await this.pkgRepo.accessPackageBrandItemsModel.bulkCreate(
+          itemRecords.map((r) => ({
+            packageBrand_id: r.packageBrand_id,
+            product_id: r.product_id,
+            quantity: r.quantity,
+          })),
+          { transaction: t, returning: true },
+        );
+
+        const tempIdToItemId = new Map<string, number>();
+        for (const item of createdItems) {
+          const match = itemRecords.find(
+            (r) =>
+              r.packageBrand_id === item.packageBrand_id &&
+              r.product_id === item.product_id &&
+              r.quantity === item.quantity,
+          );
+          if (match) {
+            tempIdToItemId.set(match.tempId, item.id);
+          }
+        }
+
+        const finalVariantInsert = variantRecords
+          .map((v) => ({
+            item_id: tempIdToItemId.get(v.tempId),
+            variant_id: v.variant_id,
+            maxCapacity: v.maxCapacity,
+          }))
+          .filter((x) => !!x.item_id);
+
+        if (finalVariantInsert.length) {
+          await this.pkgRepo.accessPackageBrandItemsCapacityModel.bulkCreate(finalVariantInsert, {
+            transaction: t,
+          });
+        }
+
+        const finalSizeInsert = sizeQtyArr
+          .map((x) => ({
+            item_id: tempIdToItemId.get(x.tempId),
+            variant_size: x.variant_size,
+            maxCapacity: x.maxCapacity,
+          }))
+          .filter((x) => !!x.item_id);
+
+        if (finalSizeInsert.length) {
+          await this.pkgRepo.accessPackageBrandItemsQtyModel.bulkCreate(finalSizeInsert, {
+            transaction: t,
+          });
+        }
+      }
 
       await t.commit();
+
       return { success: true, message: AllMessages.PAKG_UPDATED };
     } catch (err) {
       await t.rollback();
+      console.error('❌ updatePackage error:', err);
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
     }
   }
@@ -919,16 +1366,17 @@ export class ProductsService {
         include: [
           {
             model: this.userRepo.userModel,
-            as: 'customer',
+            as: 'customers',
             attributes: ['id', 'email', 'firstName', 'lastName'],
           },
         ],
       });
       return {
         success: true,
-        data: packageCustomers.map((c: any) => c.customer).filter(Boolean),
+        data: packageCustomers.map((c: any) => c.customers).filter(Boolean),
       };
     } catch (err) {
+      console.error('❌ getPackageCustomers error:', err);
       throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
     }
   }
@@ -942,9 +1390,13 @@ export class ProductsService {
         transaction: t,
       });
       await t.commit();
+
+      this.socketGateway.server.emit(`fetchAccess-${customer_id}`);
+
       return { success: true, message: AllMessages.ACCESS_REVOKED };
     } catch (err) {
       await t.rollback();
+      console.error('❌ revokeAccess error:', err);
       throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
     }
   }

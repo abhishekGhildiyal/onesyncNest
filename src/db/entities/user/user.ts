@@ -107,6 +107,20 @@ export class User extends Model {
   })
   declare zip: string;
 
+  @Column({
+    type: DataType.STRING,
+    field: 'email_verified',
+    allowNull: true,
+  })
+  declare email_verified: string;
+
+  @Column({
+    type: DataType.BOOLEAN,
+    field: 'onboarding_status',
+    defaultValue: false,
+  })
+  declare onboarding_status: boolean;
+
   // Transient field (not in database)
   // Use class property or getter for transient fields
   declare storeList?: any[];

@@ -34,7 +34,7 @@ export class CustomerInventory extends Model {
     type: DataType.INTEGER,
     field: 'product_id',
   })
-  declare product_id: number;
+  declare productId: number;
 
   @Column({
     type: DataType.STRING,

@@ -53,6 +53,12 @@ export class PackageBrandItemsQty extends Model {
     type: DataType.INTEGER,
     allowNull: true,
   })
+  declare originalCapacity: number;
+
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
   declare shortage: number;
 
   @Column({

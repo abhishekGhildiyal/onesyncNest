@@ -7,14 +7,13 @@ import { PACKAGE_STATUS } from '../constants/enum';
 
 const ACTIVE_STATUSES = [
   PACKAGE_STATUS.DRAFT,
-  PACKAGE_STATUS.CREATED, // Note: CREATED might not be in enum, check definition
+  PACKAGE_STATUS.CREATED,
   PACKAGE_STATUS.SUBMITTED,
   PACKAGE_STATUS.INITIATED,
   PACKAGE_STATUS.IN_REVIEW,
   PACKAGE_STATUS.CONFIRM,
 ];
 
-// Ensure valid statuses are used (filter out undefined if enum mismatch)
 const VALID_ACTIVE_STATUSES = ACTIVE_STATUSES.filter((s) => s !== undefined);
 
 @Injectable()
@@ -25,7 +24,7 @@ export class ReducePackageQuantity {
   ) {}
 
   reduceSoldQuantityForPackages = async ({
-    product_id,
+    productId,
     storeId,
     size,
     soldQty,
@@ -33,7 +32,7 @@ export class ReducePackageQuantity {
     excludeOrderId = undefined,
     brandId = undefined,
   }: {
-    product_id: number;
+    productId: number;
     storeId: number | string;
     size: string;
     soldQty: number;
@@ -41,27 +40,22 @@ export class ReducePackageQuantity {
     excludeOrderId?: number;
     brandId?: number;
   }) => {
-    // console.log(`🧩 [reduceSoldQuantityForPackages] Syncing packages...`);
-
     if (!size) {
-      console.warn(`⚠️ Variant ${product_id} has undefined size, skipping capacity sync.`);
+      console.warn(`⚠️ Variant ${productId} has undefined size, skipping capacity sync.`);
       return;
     }
 
-    // Step 1: Get ACTUAL remaining stock from VariantModel
     const remainingVariantStock = await this.productrepo.variantModel.sum('quantity', {
       where: {
-        product_id,
+        productId,
         status: 1,
-        [Op.and]: Sequelize.where(Sequelize.fn('TRIM', Sequelize.col('option1Value')), size),
+        [Op.and]: Sequelize.where(Sequelize.fn('TRIM', Sequelize.col('option1value')), size),
       },
       transaction,
     });
 
     const remainingStock = remainingVariantStock || 0;
-    // console.log(`📦 ACTUAL Remaining Stock for (${product_id}, ${size}) = ${remainingStock}`);
 
-    // Step 2: Get active packages (excluding current order)
     const whereClause: any = {
       status: { [Op.in]: VALID_ACTIVE_STATUSES },
       store_id: storeId,
@@ -83,7 +77,6 @@ export class ReducePackageQuantity {
       return;
     }
 
-    // Step 3: Get package items for this product & size and specific brand (if provided)
     const brandWhere: any = {
       package_id: { [Op.in]: activePackageIds },
     };
@@ -96,12 +89,12 @@ export class ReducePackageQuantity {
       include: [
         {
           model: this.pkgRepo.packageBrandItemsModel,
-          as: 'qtyItem', // Ensure strict association alias match
-          where: { product_id },
+          as: 'qtyItem',
+          where: { product_id: productId },
           include: [
             {
               model: this.pkgRepo.packageBrandModel,
-              as: 'brand', // Ensure strict association alias match
+              as: 'brand',
               where: brandWhere,
               attributes: ['package_id'],
             },
@@ -118,7 +111,7 @@ export class ReducePackageQuantity {
     let itemsSynced = 0;
 
     for (const qtyRow of qtyRows) {
-      const { maxCapacity, selectedCapacity, qtyItem } = qtyRow as any; // Cast if relations not typed
+      const { maxCapacity, selectedCapacity, qtyItem } = qtyRow as any;
       const { id: itemId, consumerDemand } = qtyItem;
 
       const newMaxCapacity = Math.max(0, Number(maxCapacity) - soldQty);
@@ -142,6 +135,6 @@ export class ReducePackageQuantity {
       console.log(`✅ Synced Package ${packageId}, Item ${itemId}`);
     }
 
-    console.log(`🎯 [reduceSoldQuantityForPackages] COMPLETE: Synced ${itemsSynced} items for ${product_id}-${size}`);
+    console.log(`🎯 [reduceSoldQuantityForPackages] COMPLETE: Synced ${itemsSynced} items for ${productId}-${size}`);
   };
 }

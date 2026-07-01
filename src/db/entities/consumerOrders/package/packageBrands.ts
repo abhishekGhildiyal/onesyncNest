@@ -45,6 +45,13 @@ export class PackageBrand extends Model {
   })
   declare selected: boolean;
 
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: true,
+    defaultValue: false,
+  })
+  declare originalSelected: boolean;
+
   // Association properties (defined in packageASSOCIATION.ts)
   declare items?: PackageBrandItems[];
   declare order?: PackageOrder;

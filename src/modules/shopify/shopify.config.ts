@@ -1,6 +1,12 @@
 import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import { restResources } from '@shopify/shopify-api/rest/admin/2024-07';
 import '@shopify/shopify-api/adapters/node';
+import { setAbstractFetchFunc } from '@shopify/shopify-api/runtime';
+
+// Override default node-fetch with native globalThis.fetch to avoid ERR_STREAM_PREMATURE_CLOSE on Node 22.23+/24.17+
+if (typeof globalThis.fetch === 'function') {
+  setAbstractFetchFunc(globalThis.fetch);
+}
 
 class SimpleSessionStorage {
   private sessions = new Map<string, Session>();

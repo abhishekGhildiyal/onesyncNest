@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import {
+  AuditItem,
+  AuditSession,
   Inventory,
   InventoryRequest,
   Location,
@@ -12,7 +14,10 @@ import {
   ShopifyOrderRequest,
   Store,
   StoreAddress,
+  StoreBarcodeSequence,
   StoreLocationMapping,
+  StoreTagSource,
+  TransferItem,
   Variant,
 } from '../entities';
 
@@ -49,5 +54,16 @@ export class StoreRepository {
 
     @InjectModel(PriceChangeRequest)
     public readonly priceChangeRequestModel: typeof PriceChangeRequest,
+
+    @InjectModel(StoreBarcodeSequence)
+    public readonly storeBarcodeSequenceModel: typeof StoreBarcodeSequence,
+    @InjectModel(StoreTagSource)
+    public readonly storeTagSourceModel: typeof StoreTagSource,
+    @InjectModel(TransferItem)
+    public readonly transferItemModel: typeof TransferItem,
+    @InjectModel(AuditItem)
+    public readonly auditItemModel: typeof AuditItem,
+    @InjectModel(AuditSession)
+    public readonly auditSessionModel: typeof AuditSession,
   ) {}
 }

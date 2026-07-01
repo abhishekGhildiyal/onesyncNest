@@ -15,6 +15,8 @@ import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
 import { UserRepository } from 'src/db/repository/user.repository';
 import { SocketGateway } from '../socket/socket.gateway';
+import { MailService } from '../mail/mail.service';
+import { TemplatesSlug } from '../mail/mail.constants';
 import * as DTO from './dto/packages.dto';
 
 @Injectable()
@@ -28,6 +30,7 @@ export class PackagesService {
     private socketGateway: SocketGateway,
     private readonly ConsumerInventoryHelper: ConsumerInventoryHelperService,
     private readonly sequelize: Sequelize,
+    private readonly mailService: MailService,
   ) {}
 
   /**
@@ -324,7 +327,6 @@ export class PackagesService {
       });
 
       if (!order) {
-        await t.rollback();
         throw new BadRequestException({
           message: 'Order not found or not in progress or shipment not done yet.',
           success: false,
@@ -332,7 +334,6 @@ export class PackagesService {
       }
 
       if (order.sales_agent_id !== user.userId) {
-        await t.rollback();
         throw new BadRequestException({
           message: 'You are not authorized to close this package.',
           success: false,
@@ -372,7 +373,10 @@ export class PackagesService {
 
       return { success: true, message: AllMessages.PKG_CLSD };
     } catch (err) {
-      if (t) await t.rollback();
+      if (t && !(t as { finished?: boolean }).finished) {
+        await t.rollback();
+      }
+      console.error('❌ closeOrder error:', err);
       throw err instanceof BadRequestException ? err : new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
@@ -657,7 +661,7 @@ export class PackagesService {
   /**
    * @description Update shortage quantities for package items
    */
-  async shortageQuantities(body: any) {
+  async shortageQuantities(body: DTO.ShortageQuantityDto) {
     if (!this.pkgRepo.packageOrderModel.sequelize)
       throw new BadRequestException({
         message: 'Sequelize not initialized',
@@ -672,7 +676,6 @@ export class PackagesService {
       });
 
       if (order?.status !== PACKAGE_STATUS.CLOSE) {
-        await t.rollback();
         throw new BadRequestException({
           message: 'Order not closed yet.',
           success: false,
@@ -694,9 +697,11 @@ export class PackagesService {
         if (isItemReceived != null) itemStatusMap.set(packageItemId, isItemReceived);
 
         for (const { size, receivedQuantity, selectedQuantity } of variants) {
+          const received = Number(receivedQuantity) || 0;
+          const selected = Number(selectedQuantity) || 0;
           updateOperations.push({
-            receivedQuantity,
-            shortage: selectedQuantity - receivedQuantity,
+            receivedQuantity: received,
+            shortage: selected - received,
             where: { item_id: packageItemId, variant_size: size },
           });
         }
@@ -728,7 +733,10 @@ export class PackagesService {
 
       return { success: true, message: AllMessages.SHRTG_QTY };
     } catch (err) {
-      if (t) await t.rollback();
+      if (t && !(t as { finished?: boolean }).finished) {
+        await t.rollback();
+      }
+      console.error('❌ shortageQuantities error:', err);
       throw err instanceof BadRequestException ? err : new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
@@ -1138,6 +1146,129 @@ export class PackagesService {
     } catch (err) {
       if (t) await t.rollback();
       throw err instanceof BadRequestException ? err : new BadRequestException(AllMessages.SMTHG_WRNG);
+    }
+  }
+
+  async defaultLocation(storeId: number) {
+    try {
+      const locations = await this.storeRepo.storeLocationMappingModel.findAll({
+        where: { store_id: storeId },
+      });
+
+      if (locations.length > 1) {
+        return {
+          success: true,
+          message: 'This store have multiple locations.',
+          showStoreList: true,
+          locations,
+        };
+      }
+
+      if (locations.length === 1) {
+        return {
+          success: true,
+          message: 'This store have single location.',
+          showStoreList: false,
+          storeId: locations[0]?.store_id,
+          locationId: locations[0]?.id,
+        };
+      }
+
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+    } catch (err) {
+      console.error('❌ defaultLocation:', err);
+      throw new BadRequestException({ success: false, message: AllMessages.SMTHG_WRNG });
+    }
+  }
+
+  async sendInvoiceToConsumer(user: getUser, body: { orderId: number; pdfBase64: string }) {
+    try {
+      const { orderId, pdfBase64 } = body;
+      const { storeId } = user;
+
+      if (!orderId || !pdfBase64) {
+        throw new BadRequestException({
+          success: false,
+          message: 'Order ID and PDF Base64 string are required.',
+        });
+      }
+
+      const packageOrderData: any = await this.pkgRepo.packageOrderModel.findByPk(orderId, {
+        include: [
+          {
+            model: this.storeRepo.storeModel,
+            as: 'store',
+            attributes: ['store_name', 'store_code', 'store_icon', 'store_id'],
+          },
+          {
+            model: this.pkgRepo.packageCustomerModel,
+            as: 'customers',
+            include: [{ model: this.userRepo.userModel, as: 'customer' }],
+          },
+        ],
+      });
+
+      if (!packageOrderData) {
+        throw new BadRequestException({ success: false, message: 'Package order not found' });
+      }
+
+      const customer = packageOrderData.customers?.[0]?.customer;
+      if (!customer?.email) {
+        throw new BadRequestException({
+          success: false,
+          message: 'Customer email not found for this order.',
+        });
+      }
+
+      const store = packageOrderData.store;
+
+      const { html, subject } = this.mailService.getPopulatedTemplate(TemplatesSlug.SendInvoiceToConsumer, {
+        project: process.env.PROJECT_NAME,
+        orderNo: packageOrderData.order_id,
+        storeName: store?.store_name || 'Our Store',
+        supportEmail: process.env.SUPPORT_EMAIL,
+        frontendURL: process.env.FRONTEND_URL || '',
+        storeLogo: store?.store_icon || '',
+        oneSyncLogo: process.env.ONE_SYNC_LOGO,
+        twitterLink: '#',
+        fbLink: '#',
+        instaLink: '#',
+      });
+
+      const base64Data = pdfBase64.includes('base64,') ? pdfBase64.split('base64,')[1] : pdfBase64;
+
+      const attachments = [
+        {
+          content: base64Data,
+          filename: `Invoice_${packageOrderData.order_id}.pdf`,
+          type: 'application/pdf',
+          disposition: 'attachment',
+        },
+      ];
+
+      const sendMailResult = await this.mailService.sendMail(
+        customer.email,
+        html,
+        subject,
+        store?.store_id,
+        attachments,
+      );
+
+      if (!sendMailResult.success) {
+        throw new BadRequestException({
+          success: false,
+          message: sendMailResult.error || 'Failed to send email via SendGrid.',
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Invoice successfully sent to consumer email.',
+      };
+    } catch (error) {
+      console.error('❌ sendInvoiceToConsumer error:', error);
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException({ success: false, message: 'Failed to send invoice.' });
     }
   }
 }

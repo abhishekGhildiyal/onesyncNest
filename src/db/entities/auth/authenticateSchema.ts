@@ -11,7 +11,7 @@ import {
 import { User } from '../user/user';
 
 @Table({
-  tableName: 'authenticate',
+  tableName: 'authenicate',
   timestamps: true,
 })
 export class Authenticate extends Model {

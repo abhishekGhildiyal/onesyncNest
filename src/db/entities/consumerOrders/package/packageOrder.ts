@@ -103,6 +103,13 @@ export class PackageOrder extends Model {
   declare notes: string;
 
   @Column({
+    type: DataType.STRING,
+    allowNull: true,
+    field: 'payment_note',
+  })
+  declare payment_note: string;
+
+  @Column({
     type: DataType.DOUBLE,
     allowNull: true,
   })
@@ -113,6 +120,20 @@ export class PackageOrder extends Model {
     allowNull: true,
   })
   declare received_amount: number;
+
+  @Column({
+    type: DataType.DOUBLE,
+    allowNull: true,
+    field: 'shipping_cost',
+  })
+  declare shipping_cost: number;
+
+  @Column({
+    type: DataType.DOUBLE,
+    allowNull: true,
+    field: 'handling_cost',
+  })
+  declare handling_cost: number;
 
   @Column({
     type: DataType.INTEGER,

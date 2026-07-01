@@ -173,6 +173,7 @@ export const packageAssociations = () => {
     foreignKey: 'product_id',
     otherKey: 'tag_id',
     as: 'tags',
+    timestamps: false,
   });
 
   ProductList.belongsTo(Brands, {

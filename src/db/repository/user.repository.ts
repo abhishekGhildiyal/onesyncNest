@@ -8,6 +8,7 @@ import {
   Role,
   RolePermission,
   User,
+  UserForgotToken,
   UserLoginToken,
   UserStoreMapping,
 } from '../entities';
@@ -32,6 +33,9 @@ export class UserRepository {
     public readonly authenticationModel: typeof Authenticate,
     @InjectModel(UserLoginToken)
     public readonly userLoginTokenModel: typeof UserLoginToken,
+
+    @InjectModel(UserForgotToken)
+    public readonly userForgotTokenModel: typeof UserForgotToken,
 
     @InjectModel(RecipientDetails)
     public readonly recipientDetailsModel: typeof RecipientDetails,

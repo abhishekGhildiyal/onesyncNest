@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { GuardsModule } from './common/guards/guards.module';
 import { HelpersModule } from './common/helpers/helpers.module';
 import { DatabaseModule } from './db/database.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -10,6 +11,9 @@ import { MailModule } from './modules/mail/mail.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PackagesModule } from './modules/packages/packages.module';
+import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { RedisModule } from './services/redis/redis.module';
+import { ShopifyQueueModule } from './queues/shopify-queue.module';
 import { ProductsModule } from './modules/products/products.module';
 import { ShopifyModule } from './modules/shopify/shopify.module';
 import { SocketModule } from './modules/socket/socket.module';
@@ -44,6 +48,9 @@ import { UsersModule } from './modules/users/users.module';
     }),
     DatabaseModule, // all entities and associations are loaded here
 
+    RedisModule,
+    ShopifyQueueModule,
+    GuardsModule,
     HelpersModule,
     MailModule,
     InventoryModule,
@@ -55,6 +62,7 @@ import { UsersModule } from './modules/users/users.module';
     StoreModule,
     UsersModule,
     PackagesModule,
+    WebhooksModule,
   ],
   controllers: [AppController],
   providers: [AppService],
