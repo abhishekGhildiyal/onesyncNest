@@ -127,8 +127,10 @@ export async function shopifyGraphqlUpsertStockXMetafields(
   store: { shopify_store?: string; shopify_token?: string },
   shopifyProductId: string | number,
   productList: { stockXStyleId?: string; stockXSizeChart?: string },
+  options: { syncSizeLocale?: boolean } = {},
 ) {
   if (!shopifyProductId || !productList) return;
+  const { syncSizeLocale = true } = options;
   const ownerId = toProductGid(shopifyProductId);
   const metafields: Record<string, unknown>[] = [];
 
@@ -141,7 +143,7 @@ export async function shopifyGraphqlUpsertStockXMetafields(
       type: 'single_line_text_field',
     });
   }
-  if (productList.stockXSizeChart) {
+  if (syncSizeLocale && productList.stockXSizeChart) {
     metafields.push({
       ownerId,
       namespace: 'StockX',

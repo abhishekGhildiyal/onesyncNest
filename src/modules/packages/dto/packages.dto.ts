@@ -35,9 +35,6 @@ export class MakePaymentDto {
 export class RemovePaymentDto {
   @IsNumber()
   paymentId: number;
-
-  @IsNumber()
-  packageOrderId: number;
 }
 
 export class MakeShipmentDto {
@@ -51,17 +48,34 @@ export class MakeShipmentDto {
   @IsBoolean()
   @IsOptional()
   localPickup?: boolean;
+
+  @IsOptional()
+  shippingCost?: number | string | null;
+
+  @IsOptional()
+  handlingCost?: number | string | null;
 }
 
 export class CloseOrderDto {
   @IsString()
   @IsOptional()
+  pDate?: string;
+
+  @IsString()
+  @IsOptional()
   storeId?: string;
+
+  @IsString()
+  @IsOptional()
+  locationId?: string;
 }
 
 export class MarkAllDto {
   @IsArray()
-  itemIds: number[];
+  brandIds: number[];
+
+  @IsNumber()
+  packageOrderId: number;
 }
 
 export class ShortageQuantityDto {

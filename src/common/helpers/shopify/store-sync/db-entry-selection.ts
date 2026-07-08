@@ -28,7 +28,10 @@ export const shouldIncludeInventory = (
   catalogWeb: any,
   idFilter: Set<number> | null,
 ) => {
-  if (idFilter && !idFilter.has(Number(inv.id))) return false;
+  const isCatalogWeb = catalogWeb && inv === catalogWeb;
+  if (idFilter && !idFilter.has(Number(inv.id))) {
+    if (!(isCatalogWeb && catalogHasActiveVariants(rows, catalogWeb))) return false;
+  }
   const hasActive =
     inv === catalogWeb
       ? catalogHasActiveVariants(rows, catalogWeb)

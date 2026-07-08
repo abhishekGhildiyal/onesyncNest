@@ -23,6 +23,8 @@ import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
 import { runStoreSync } from 'src/common/helpers/shopify/store-sync';
 import { ShopifyServiceFactory } from 'src/modules/shopify/shopify.service';
+import { processBulkUpdateDb } from 'src/queues/inventory-bulk-update.processor';
+import type { InventoryBulkUpdateItemPayload } from 'src/queues/inventory-bulk-update.types';
 import { AllMessages } from '../../common/constants/messages';
 import * as DTO from './dto/inventory.dto';
 
@@ -970,7 +972,7 @@ export class InventoryService {
   }
 
   /**
-   * @description PATCH /bulkUpdate — { targets, data } bulk delta (background)
+   * @description PATCH /bulkUpdate — { targets, data } bulk delta (awaits DB, Shopify in background)
    */
   async bulkUpdateInventory(user: getUser, body: DTO.BulkUpdateInventoryDto) {
     const { targets, data } = body;
@@ -994,33 +996,51 @@ export class InventoryService {
     }
 
     const sharedVariant = data.variant && typeof data.variant === 'object' ? data.variant : {};
-    const items = targets.map(({ itemId, variantId }) => ({
+    const items: InventoryBulkUpdateItemPayload[] = targets.map(({ itemId, variantId }) => ({
       itemId,
       ...data,
       variant: { id: variantId, ...sharedVariant },
     }));
 
-    this.updateCore
-      .runInventoryUpdates(items, { ...ctx, deltaMode: true })
-      .then(({ errors, failed }) => {
-        if (errors?.length) {
-          console.error(
-            '❌ [bulkUpdateInventory Background] Completed with item failures:\n',
-            JSON.stringify(errors, null, 2),
-          );
-        }
-        if (failed) {
-          console.error('❌ [bulkUpdateInventory Background] Failed completely.');
-        }
-      })
-      .catch((err) => console.error('❌ [bulkUpdateInventory Background]:', err));
+    try {
+      const result = await processBulkUpdateDb(this.updateCore, {
+        storeId: ctx.storeId,
+        roleId: ctx.roleId,
+        userId: ctx.userId,
+        items,
+      });
 
-    return {
-      code: { status: 'Success', msg: 'Bulk Update Initiated', code: '200' },
-      success: true,
-      message: 'Bulk Update is processing in the background',
-      updated: items.length,
-    };
+      if (result.pendingShopifyJobs.length) {
+        this.updateCore
+          .flushShopifyJobs(result.pendingShopifyJobs, ctx.storeId, result.storeSnapshot)
+          .catch((err) =>
+            console.error('❌ [bulkUpdateInventory] Shopify flush failed:', err.message),
+          );
+      }
+
+      const failedCount = result.errors.length;
+      const updatedCount = items.length - failedCount;
+      const message =
+        failedCount > 0
+          ? `Bulk update completed: ${updatedCount}/${items.length} items updated`
+          : 'Bulk update completed successfully';
+
+      return {
+        code: { status: 'Success', msg: 'Bulk Update Successful', code: '200' },
+        success: true,
+        message,
+        updated: updatedCount,
+        failed: failedCount,
+        errors: failedCount ? result.errors : undefined,
+        queued: false,
+      };
+    } catch (err: any) {
+      console.error('❌ [bulkUpdateInventory]:', err);
+      throw new InternalServerErrorException({
+        success: false,
+        message: err.message || 'Something went wrong during inventory update',
+      });
+    }
   }
 
   /**

@@ -19,13 +19,15 @@ import { CustomFieldValueAuditHelper } from '../shared/custom-field-value-audit.
 import { UniqueProductStoreShopifyHelper } from '../shopify/unique-product-store-shopify.helper';
 import { ShopifyInventorySyncHelper } from '../shopify/shopify-inventory-sync.helper';
 import { ShopifySyncQueueService } from 'src/queues/shopify-sync-queue.service';
-import { isSamePurchaseDateValue } from './inventory-audit-diff';
+import { isSamePurchaseDateValue, isSameSoldOnValue } from './inventory-audit-diff';
 import { InventoryActivityLogHelper } from './inventory-activity-log.helper';
 import {
   collectIncomingPatchFields,
   diffChangedFields,
   diffSavedChanges,
+  formatUpdateError,
   isStatusSentinel,
+  normalizeVariantNotNullDefaults,
   readRowField,
   resolveShopifyAction,
   resolveVariantIncoming,
@@ -33,13 +35,14 @@ import {
   toKey,
 } from './inventory-update-helpers';
 import { InventoryUpdateParityHelper } from './inventory-update-parity.helper';
+import { MarkInventorySold } from '../sold-inventory.helper';
 
 const VARIANT_ATTR: Record<string, string> = {
   paymentForm: 'payment_form',
   purchaseDate: 'purchase_date',
-  vendorOrderNo: 'vendor_order_no',
+  vendorOrderNo: 'vendorOrderNo',
   purchaseFromVendor: 'purchase_from_vendor',
-  localOrderNo: 'local_order_no',
+  localOrderNo: 'localOrderNo',
   itemTags: 'itemTags',
   variantImage: 'variantImage',
   storeLocationMappingId: 'storeLocationMappingId',
@@ -79,6 +82,7 @@ export class InventoryUpdateCoreHelper {
     private readonly activityLog: InventoryActivityLogHelper,
     private readonly shopifySync: ShopifyInventorySyncHelper,
     private readonly shopifyQueue: ShopifySyncQueueService,
+    private readonly markSold: MarkInventorySold,
     @InjectConnection() private readonly sequelize: Sequelize,
   ) {}
 
@@ -348,13 +352,14 @@ export class InventoryUpdateCoreHelper {
     );
   }
 
-  private runShopifyJobs(shopifyJobs: any[], store: any, storeId: number) {
-    const deleteByProduct = new Map<number, any>();
+  private groupShopifyJobs(shopifyJobs: any[]) {
+    const deleteByProduct = new Map<number, any[]>();
     const resyncByProduct = new Map<number, Set<number>>();
 
     for (const job of shopifyJobs) {
       if (job.action === SHOPIFY_ACTION.DELETE) {
-        deleteByProduct.set(job.productId, job);
+        if (!deleteByProduct.has(job.productId)) deleteByProduct.set(job.productId, []);
+        deleteByProduct.get(job.productId)!.push(job);
         resyncByProduct.delete(job.productId);
       } else if (job.action === SHOPIFY_ACTION.RESYNC && !deleteByProduct.has(job.productId)) {
         if (!resyncByProduct.has(job.productId)) resyncByProduct.set(job.productId, new Set());
@@ -362,53 +367,96 @@ export class InventoryUpdateCoreHelper {
       }
     }
 
+    return { deleteByProduct, resyncByProduct };
+  }
+
+  private async executeProductDeletes(shopifyService: any, store: any, productId: number, jobs: any[]) {
+    if (!jobs?.length) return;
+
+    if (this.uniqueProduct.isUniqueStore(store)) {
+      for (const job of jobs) {
+        await this.uniqueProduct.deleteUniqueListings(shopifyService, job.inventory, productId);
+      }
+      return;
+    }
+
+    const deleteTargets = jobs.filter((job) => job.inventory?.shopifyId);
+    if (!deleteTargets.length) return;
+
+    const shopifyIds = deleteTargets.map((job) => job.inventory.shopifyId);
+    const results = await shopifyService.deleteItems(shopifyIds, productId);
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const inventory = deleteTargets[i]?.inventory;
+      if (!inventory) continue;
+      if (result?.success || result?.message === 'Not found') {
+        await this.productRepo.inventoryModel.update(
+          { shopifyId: null, shopifyStatus: 'Unlisted' },
+          { where: { id: inventory.id } },
+        );
+      }
+    }
+  }
+
+  private async reconcileLinkedWebEntries(store: any, productIds: number[]) {
+    if (!productIds.length) return;
+    await this.markSold.syncWebInventories({ productIds: [...new Set(productIds)], store });
+  }
+
+  private async processShopifySideEffects(shopifyJobs: any[], store: any, storeId: number) {
+    const { deleteByProduct, resyncByProduct } = this.groupShopifyJobs(shopifyJobs);
     const shopifyService = this.shopifyFactory.createService(store, { useGraphql: true });
+    const affectedProductIds = new Set<number>();
 
-    for (const job of deleteByProduct.values()) {
-      const deleteListing = this.uniqueProduct.isUniqueStore(store)
-        ? () => this.uniqueProduct.deleteUniqueListings(shopifyService, job.inventory, job.productId)
-        : async () => {
-            if (!job.inventory.shopifyId) return;
-            const results = await shopifyService.deleteItems([job.inventory.shopifyId], job.productId);
-            const result = results[0];
-            if (result?.success || result?.message === 'Not found') {
-              await this.productRepo.inventoryModel.update(
-                { shopifyId: null, shopifyStatus: 'Unlisted' },
-                { where: { id: job.inventory.id } },
-              );
-            }
-          };
+    for (const productId of deleteByProduct.keys()) affectedProductIds.add(productId);
+    for (const productId of resyncByProduct.keys()) affectedProductIds.add(productId);
 
-      deleteListing().catch((err) =>
-        console.error(`❌ Shopify DELETE product ${job.productId}:`, err.message),
-      );
+    if (deleteByProduct.size) {
+      for (const [productId, jobs] of deleteByProduct.entries()) {
+        await this.executeProductDeletes(shopifyService, store, productId, jobs);
+      }
     }
 
     for (const [productId, inventoryIds] of resyncByProduct.entries()) {
-      this.uniqueProduct
-        .expandSyncIds(inventoryIds, store)
-        .then((expandedIds) => {
-          const jobId = `sync-update-${productId}-${storeId}-${Date.now()}`;
-          return this.shopifyQueue.add(
-            jobId,
-            {
-              productId,
-              storeId,
-              bulkSync: true,
-              useGraphql: true,
-              forceResync: true,
-              inventoryIds: [...expandedIds],
-            },
-            {
-              jobId,
-              attempts: 5,
-              backoff: { type: 'exponential', delay: 5000 },
-              removeOnComplete: true,
-            },
-          );
-        })
-        .catch((err) => console.error(`❌ Shopify queue RESYNC product ${productId}:`, err.message));
+      const expandedIds = await this.uniqueProduct.expandSyncIds(inventoryIds, store);
+      await this.shopifySync.shopifyInventorySync(productId, storeId, {
+        bulkSync: true,
+        useGraphql: true,
+        forceResync: true,
+        inventoryIds: [...expandedIds],
+        fromQueue: true,
+        skipLinkedWebReconcile: true,
+      });
     }
+
+    await this.reconcileLinkedWebEntries(store, [...affectedProductIds]);
+  }
+
+  /** Fire-and-forget Shopify jobs (single-item / non-bulk updates). */
+  private runShopifyJobs(shopifyJobs: any[], store: any, storeId: number) {
+    if (!shopifyJobs.length) return;
+
+    this.processShopifySideEffects(shopifyJobs, store, storeId).catch((err) =>
+      console.error('❌ Shopify side-effects failed:', err.message),
+    );
+  }
+
+  /**
+   * Await all Shopify side-effects before completing a bulk job.
+   * DB updates should use deferShopify; call this once every item is saved.
+   */
+  async flushShopifyJobs(shopifyJobs: any[], storeId: number, storeInput?: any) {
+    if (!shopifyJobs.length) return;
+
+    const store =
+      storeInput ??
+      (await this.storeRepo.storeModel.findByPk(storeId, {
+        include: [{ model: StoreTagSource, as: 'tags', through: { attributes: [] } }],
+      }));
+    if (!store) return;
+
+    await this.processShopifySideEffects(shopifyJobs, store, storeId);
   }
 
   async runInventoryUpdates(
@@ -418,7 +466,14 @@ export class InventoryUpdateCoreHelper {
       roleId,
       userId,
       deltaMode = false,
-    }: { storeId: number; roleId: number; userId: number; deltaMode?: boolean },
+      deferShopify = false,
+    }: {
+      storeId: number;
+      roleId: number;
+      userId: number;
+      deltaMode?: boolean;
+      deferShopify?: boolean;
+    },
   ) {
     const transaction = await this.sequelize.transaction();
     const results: any[] = [];
@@ -447,6 +502,7 @@ export class InventoryUpdateCoreHelper {
               { model: this.productRepo.productListModel, as: 'productList' },
             ],
             transaction,
+            lock: transaction.LOCK.UPDATE,
           })) as any;
           if (!inventory) throw new Error(`Inventory with ID ${itemId} not found`);
 
@@ -514,6 +570,9 @@ export class InventoryUpdateCoreHelper {
             }
             if (key === 'itemTags') val = this.updateParity.normalizeItemTagsValue(rawVal);
             if (key === 'purchaseDate') val = parsePurchaseDateValue(rawVal) as any;
+            if (key === 'payout' && val == null) val = 0;
+            if (key === 'weight' && val === '') val = null;
+            if (key === 'compare_at_price' && val != null) val = String(val);
 
             variant.set(VARIANT_ATTR[key] || key, val);
           }
@@ -553,7 +612,12 @@ export class InventoryUpdateCoreHelper {
           if (tagProductId) tagSyncProductIds.push(tagProductId);
 
           await inventory.save({ transaction });
-          for (const v of inventory.variants) await v.save({ transaction });
+          for (const v of inventory.variants) {
+            if (Number(v.id) === Number(variant.id) || v.changed()) {
+              normalizeVariantNotNullDefaults(v);
+              await v.save({ transaction });
+            }
+          }
 
           if (customFields?.length) {
             const rev = await this.customFieldAudit.createCustomFieldRevision(transaction, String(userId || 'SYSTEM'));
@@ -602,6 +666,12 @@ export class InventoryUpdateCoreHelper {
             if (!isSamePurchaseDateValue(prevPurchase, nextPurchase)) changedFields.add('purchaseDate');
           }
 
+          if (incoming.soldOn !== undefined) {
+            const prevSoldOn = readRowField(oldInv, 'soldOn');
+            const nextSoldOn = readRowField(newInv, 'soldOn');
+            if (!isSameSoldOnValue(prevSoldOn, nextSoldOn)) changedFields.add('soldOn');
+          }
+
           const publishedScope = String(newInv.publishedScope || oldInv.publishedScope || '');
           const isGlobalScope = publishedScope === 'global';
 
@@ -622,6 +692,7 @@ export class InventoryUpdateCoreHelper {
               oldCustomFields,
               newCustomFields,
               variantIncoming,
+              inventoryIncoming: incoming,
             });
           }
 
@@ -656,7 +727,7 @@ export class InventoryUpdateCoreHelper {
             });
           }
         } catch (err: any) {
-          errors.push({ itemId: item.itemId, message: err.message });
+          errors.push({ itemId: item.itemId, message: formatUpdateError(err) });
         }
       }
 
@@ -674,6 +745,16 @@ export class InventoryUpdateCoreHelper {
         } catch (activityError: any) {
           console.error('[activityLog] flush failed for item', activityError);
         }
+      }
+
+      if (deferShopify) {
+        return {
+          results,
+          errors,
+          failed: false,
+          shopifyJobs,
+          store: store.get({ plain: true }),
+        };
       }
 
       this.runShopifyJobs(shopifyJobs, store, storeId);

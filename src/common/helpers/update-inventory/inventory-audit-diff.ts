@@ -72,6 +72,32 @@ export const isSamePurchaseDateValue = (left: unknown, right: unknown) => {
   return leftDay === rightDay;
 };
 
+export const normalizeAuditSoldOn = (value: unknown): string | null => {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return value.toISOString().replace(/\.\d{3}Z$/, '');
+  }
+
+  const s = String(value).trim();
+  if (!s) return null;
+
+  const parsed = new Date(s);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().replace(/\.\d{3}Z$/, '');
+  }
+
+  return s;
+};
+
+export const isSameSoldOnValue = (left: unknown, right: unknown) => {
+  const leftValue = normalizeAuditSoldOn(left);
+  const rightValue = normalizeAuditSoldOn(right);
+  if (!leftValue && !rightValue) return true;
+  if (!leftValue || !rightValue) return false;
+  return leftValue === rightValue;
+};
+
 const isMissing = (val: unknown) => val == null || (typeof val === 'string' && val.trim() === '');
 
 const flattenObject = (obj: unknown, prefix = '', result: Record<string, unknown> = {}) => {

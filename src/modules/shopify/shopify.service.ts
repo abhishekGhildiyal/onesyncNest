@@ -1,3 +1,4 @@
+import { isHandleInUseError, isNotFoundError } from 'src/common/helpers/shopify/shopify-sync-errors';
 import {
   shopifyGraphqlAddToCollection,
   shopifyGraphqlFindCollectionByTitle,
@@ -5,7 +6,6 @@ import {
   shopifyGraphqlUpsertVariantMetafields,
 } from './shopify-graphql.client';
 import { ShopifyGraphqlService } from './shopify-graphql.service';
-import { isNotFoundError } from 'src/common/helpers/shopify/shopify-sync-errors';
 
 interface StoreConfig {
   shopify_store: string;
@@ -76,8 +76,7 @@ export class ShopifyService {
       return await this.graphql.findProductByHandle(handle);
     } catch (err: any) {
       if (isNotFoundError(err)) return null;
-      console.error('❌ findProductByHandle:', err.message);
-      return null;
+      throw err;
     }
   }
 
@@ -86,8 +85,9 @@ export class ShopifyService {
     try {
       return await this.graphql.createProduct(payload);
     } catch (err: any) {
+      if (isHandleInUseError(err)) throw err;
       console.error('❌ createProduct:', err.message);
-      return null;
+      throw err;
     }
   }
 
@@ -97,13 +97,17 @@ export class ShopifyService {
       return await this.graphql.updateProduct(payload);
     } catch (err: any) {
       console.error('❌ updateProduct:', err.message);
-      return null;
+      throw err;
     }
   }
 
   private variantOptionKey(variant: any) {
     return [variant?.option1, variant?.option2, variant?.option3]
-      .map((value) => String(value ?? '').trim().toLowerCase())
+      .map((value) =>
+        String(value ?? '')
+          .trim()
+          .toLowerCase(),
+      )
       .join('|');
   }
 
@@ -182,14 +186,19 @@ export class ShopifyService {
     return this.graphql.findProductById(productId);
   }
 
+  private applyExistingProductPayload(payload: any, existing: any) {
+    payload.product.id = existing.id;
+    this.ensureVariantOptionValues(payload, existing);
+    this.mapVariantIds(payload, existing.variants || []);
+    this.dedupePayloadVariants(payload);
+  }
+
   async syncProduct(payload: any): Promise<any> {
     if (payload.product.id) {
       try {
         const existing = await this.fetchShopifyProduct(payload.product.id);
         if (existing) {
-          this.ensureVariantOptionValues(payload, existing);
-          this.mapVariantIds(payload, existing.variants || []);
-          this.dedupePayloadVariants(payload);
+          this.applyExistingProductPayload(payload, existing);
         }
       } catch (err: any) {
         console.warn(`⚠️ Could not fetch Shopify product ${payload.product.id} for option mapping: ${err.message}`);
@@ -197,15 +206,29 @@ export class ShopifyService {
     } else if (payload.product.handle) {
       const shopifyProduct = await this.findProductByHandle(payload.product.handle);
       if (shopifyProduct) {
-        payload.product.id = shopifyProduct.id;
-        this.ensureVariantOptionValues(payload, shopifyProduct);
-        this.mapVariantIds(payload, shopifyProduct.variants || []);
-        this.dedupePayloadVariants(payload);
+        this.applyExistingProductPayload(payload, shopifyProduct);
       }
     }
 
     if (payload.product.id) return this.updateProduct(payload);
-    return this.createProduct(payload);
+
+    try {
+      const created = await this.createProduct(payload);
+      if (created?.product?.id) return created;
+    } catch (err: any) {
+      if (!isHandleInUseError(err)) throw err;
+    }
+
+    // Virtual web listings (no shopify_id on row): handle may exist even when lookup missed.
+    if (payload.product.handle) {
+      const existing = await this.findProductByHandle(payload.product.handle);
+      if (existing) {
+        this.applyExistingProductPayload(payload, existing);
+        return this.updateProduct(payload);
+      }
+    }
+
+    return null;
   }
 
   async deleteItems(shopifyIds: string[] = [], productId?: number): Promise<DeleteResult[]> {
@@ -214,9 +237,7 @@ export class ShopifyService {
       return [];
     }
 
-    console.log(
-      `🧹 Starting Shopify deletion for product ${productId} (${shopifyIds.length} item(s))...`,
-    );
+    console.log(`🧹 Starting Shopify deletion for product ${productId} (${shopifyIds.length} item(s))...`);
 
     const results: DeleteResult[] = [];
     for (let i = 0; i < shopifyIds.length; i++) {
@@ -260,10 +281,14 @@ export class ShopifyService {
     return this.graphql.updateShopifyOrderNotes(orderId, note);
   }
 
-  upsertStockXMetafields(shopifyProductId: string | number, productList: any) {
+  upsertStockXMetafields(
+    shopifyProductId: string | number,
+    productList: any,
+    options: { syncSizeLocale?: boolean } = {},
+  ) {
     if (!shopifyProductId || !productList) return;
     if (!productList.stockXStyleId && !productList.stockXSizeChart) return;
-    return shopifyGraphqlUpsertStockXMetafields(this.storeConfig, shopifyProductId, productList);
+    return shopifyGraphqlUpsertStockXMetafields(this.storeConfig, shopifyProductId, productList, options);
   }
 
   upsertVariantMetafields(shopifyVariantId: string | number, variant: any) {

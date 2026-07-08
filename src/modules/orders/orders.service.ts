@@ -1469,6 +1469,7 @@ export class OrdersService {
           },
         ],
         transaction: t,
+        lock: t.LOCK.UPDATE,
       });
 
       if (!existingOrder) {
@@ -1481,19 +1482,12 @@ export class OrdersService {
         });
       }
 
-      if (!existingOrder.store) {
-        throw new BadRequestException({
-          success: false,
-          message: 'Store information not found for this order.',
-        });
-      }
-
       await this.pkgRepo.packageOrderModel.update(
         {
           status: showSellingPrice ? PACKAGE_STATUS.CONFIRM : PACKAGE_STATUS.CREATED,
           order_id: await generateOrderId({
-            storeId: existingOrder.store.store_id,
-            prefix: existingOrder.store.store_code,
+            storeId: existingOrder.store!.store_id,
+            prefix: existingOrder.store!.store_code,
             model: this.pkgRepo.packageOrderModel,
             draft: false,
             transaction: t,
@@ -1549,7 +1543,7 @@ export class OrdersService {
       setImmediate(() => {
         if (existingOrder?.user?.email) {
           this.mailService
-            .sendMail(existingOrder.user.email, html, subject, existingOrder.store_id)
+            .sendMail(existingOrder.user.email, html, subject)
             .catch((err) => console.error('❌ Email send failed:', err));
         }
       });
@@ -1843,11 +1837,14 @@ export class OrdersService {
       const packageOrder = await this.pkgRepo.packageOrderModel.findByPk(packageOrderId);
       if (!packageOrder) throw new BadRequestException({ success: false, message: AllMessages.PAKG_NF });
 
-      //   Update brands
-      await this.pkgRepo.packageBrandModel.update(
-        { selected: true },
-        { where: { package_id: packageOrderId, id: { [Op.in]: brandIds } } },
-      );
+      const brUpdateData: { selected: boolean; originalSelected?: boolean } = { selected: true };
+      if (packageOrder.status === PACKAGE_STATUS.CREATED) {
+        brUpdateData.originalSelected = true;
+      }
+
+      await this.pkgRepo.packageBrandModel.update(brUpdateData, {
+        where: { package_id: packageOrderId, id: { [Op.in]: brandIds } },
+      });
 
       return { success: true, message: AllMessages.ORDR_UPDTD };
     } catch (err) {
@@ -2249,7 +2246,8 @@ export class OrdersService {
         raw: true,
       });
 
-      const [requestCount, withdrawalRequestCount, priceChangeRequestCount, incomingRequestCount] = await Promise.all([
+      const [requestCount, withdrawalRequestCount, priceChangeRequestCount, incomingRequestCount, inventoryQueue, productQueue] =
+        await Promise.all([
         this.productRepo.inventoryRequestModel.count({
           where: { store_id: storeId, status: 'Requested' },
         }),
@@ -2262,18 +2260,25 @@ export class OrdersService {
         this.productRepo.variantModel.count({
           where: { store_id: storeId, status: 4 },
         }),
+        this.productRepo.inventoryModel.count({
+          where: { storeId, is_print_queue: false },
+        }),
+        this.productRepo.productListModel.count({
+          where: { storeId, is_print_queue: false },
+        }),
       ]);
 
       const finalCount = {
-        openRequests: sum(orders, [(PACKAGE_STATUS.CREATED, PACKAGE_STATUS.INITIATED)]),
+        openRequests: sum(orders, [PACKAGE_STATUS.CREATED, PACKAGE_STATUS.SUBMITTED, PACKAGE_STATUS.INITIATED]),
         inReview: sum(orders, [PACKAGE_STATUS.IN_REVIEW]),
         readyToProcess: sum(orders, [PACKAGE_STATUS.IN_PROGRESS]),
-        completed: sum(orders, [(PACKAGE_STATUS.COMPLETED, PACKAGE_STATUS.CLOSE)]),
+        completed: sum(orders, [PACKAGE_STATUS.COMPLETED, PACKAGE_STATUS.CLOSE]),
         confirm: sum(orders, [PACKAGE_STATUS.CONFIRM], 0),
         requestCount,
         withdrawalRequestCount,
         priceChangeRequestCount,
         incomingRequestCount,
+        printQueue: inventoryQueue + productQueue,
       };
 
       return { success: true, data: finalCount };
@@ -2438,7 +2443,7 @@ export class OrdersService {
    */
   async addNotes(body: any) {
     try {
-      const { orderId, notes } = body;
+      let { orderId, notes } = body;
       const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
 
       if (!order) {
@@ -2446,6 +2451,10 @@ export class OrdersService {
           success: false,
           message: AllMessages.PAKG_NF,
         });
+      }
+
+      if (!notes || notes.trim() === '') {
+        notes = null;
       }
 
       order.notes = notes;
@@ -2470,7 +2479,7 @@ export class OrdersService {
   async getNotes(param: DTO.OrderIdParamDto) {
     try {
       const { orderId } = param;
-      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId, { attributes: ['notes'] });
+      const order = await this.pkgRepo.packageOrderModel.findByPk(orderId);
 
       if (!order) {
         throw new BadRequestException({
@@ -2481,7 +2490,7 @@ export class OrdersService {
 
       return {
         success: true,
-        message: 'Notes fetched successfully.',
+        message: AllMessages.FTCH_NOTES,
         data: order.notes,
       };
     } catch (err) {
@@ -2900,7 +2909,25 @@ export class OrdersService {
         productId: number;
         newVariantsAdded: number;
         sizesUpdated: number;
+        demandsReduced: number;
+        capacitiesDeleted: number;
       }[] = [];
+
+      const invalidOrder = await this.pkgRepo.packageOrderModel.findOne({
+        where: {
+          id: orderId,
+          status: {
+            [Op.in]: [PACKAGE_STATUS.IN_PROGRESS, PACKAGE_STATUS.COMPLETED, PACKAGE_STATUS.CLOSE],
+          },
+        },
+      });
+
+      if (invalidOrder) {
+        throw new BadRequestException({
+          success: false,
+          message: 'Invalid Order',
+        });
+      }
 
       const orderBrands = await this.pkgRepo.packageBrandModel.findAll({
         where: {
@@ -2913,13 +2940,14 @@ export class OrdersService {
           {
             model: this.pkgRepo.packageBrandItemsModel,
             as: 'items',
-            where: { consumerDemand: { [Op.gt]: 0 } },
-            attributes: ['id', 'product_id'],
+            required: true,
+            attributes: ['id', 'product_id', 'consumerDemand'],
             include: [
               {
                 model: this.pkgRepo.packageBrandItemsCapacityModel,
                 as: 'capacities',
-                attributes: ['variant_id'],
+                required: false,
+                attributes: ['id', 'item_id', 'variant_id', 'selectedCapacity', 'maxCapacity'],
               },
               {
                 model: this.pkgRepo.packageBrandItemsQtyModel,
@@ -2928,7 +2956,7 @@ export class OrdersService {
                   selectedCapacity: { [Op.gt]: 0 },
                   variant_size: { [Op.ne]: null },
                 },
-                required: false,
+                required: true,
                 attributes: ['id', 'variant_size', 'selectedCapacity', 'maxCapacity'],
               },
             ],
@@ -2941,6 +2969,8 @@ export class OrdersService {
         for (const item of brand.items ?? []) {
           let newVariantsAdded = 0;
           let sizesUpdated = 0;
+          let demandsReduced = 0;
+          let capacitiesDeleted = 0;
 
           const sizes = (item.sizeQuantities || []).map((sq) => String(sq.variant_size).trim());
 
@@ -2952,7 +2982,9 @@ export class OrdersService {
               status: 1,
               quantity: { [Op.gt]: 0 },
               [Op.and]: [
-                this.sequelize.where(this.sequelize.fn('TRIM', this.sequelize.col('option1Value')), { [Op.in]: sizes }),
+                this.sequelize.where(this.sequelize.fn('TRIM', this.sequelize.col('option1Value')), {
+                  [Op.in]: sizes,
+                }),
               ],
             },
             attributes: [
@@ -2984,7 +3016,7 @@ export class OrdersService {
           }));
 
           const allVariantData = parsedVariants.flatMap((v) =>
-            v.variants.map((x) => ({
+            v.variants.map((x: any) => ({
               id: x.id,
               quantity: x.quantity,
               size: v.size,
@@ -3010,24 +3042,26 @@ export class OrdersService {
             );
           }
 
-          for (const group of parsedVariants) {
-            const totalQty = group.variants.reduce((sum, v) => sum + (v.quantity || 0), 0);
+          if (item.capacities && item.capacities.length > 0) {
+            for (const capacity of item.capacities) {
+              const variantData = allVariantData.find((v) => v.id === capacity.variant_id);
 
-            if (!totalQty) continue;
-
-            const sizeQty = (item.sizeQuantities || []).find((sq) => String(sq.variant_size).trim() === group.size);
-
-            if (sizeQty) {
-              const newMax = Math.max(totalQty, sizeQty.selectedCapacity || 0);
-
-              if (newMax !== sizeQty.maxCapacity) {
+              if (!variantData) {
                 didSyncAnything = true;
-                sizesUpdated++;
+                capacitiesDeleted++;
 
-                await this.pkgRepo.packageBrandItemsQtyModel.update(
-                  { maxCapacity: newMax },
+                await this.pkgRepo.packageBrandItemsCapacityModel.destroy({
+                  where: { id: capacity.id },
+                  transaction,
+                });
+              } else if (capacity.selectedCapacity > variantData.quantity) {
+                didSyncAnything = true;
+                demandsReduced++;
+
+                await this.pkgRepo.packageBrandItemsCapacityModel.update(
+                  { selectedCapacity: variantData.quantity },
                   {
-                    where: { id: sizeQty.id },
+                    where: { id: capacity.id },
                     transaction,
                   },
                 );
@@ -3035,13 +3069,64 @@ export class OrdersService {
             }
           }
 
-          // 🔹 Push simple summary row
-          if (newVariantsAdded || sizesUpdated) {
+          for (const group of parsedVariants) {
+            const totalQty = group.variants.reduce((sum, v) => sum + (v.quantity || 0), 0);
+
+            if (!totalQty) continue;
+
+            const sizeQty = (item.sizeQuantities || []).find(
+              (sq) => String(sq.variant_size).trim() === group.size,
+            );
+
+            if (sizeQty) {
+              const newMax = totalQty;
+              const newSelected =
+                sizeQty.selectedCapacity > totalQty ? totalQty : sizeQty.selectedCapacity;
+
+              if (newMax !== sizeQty.maxCapacity || newSelected !== sizeQty.selectedCapacity) {
+                didSyncAnything = true;
+                sizesUpdated++;
+
+                await this.pkgRepo.packageBrandItemsQtyModel.update(
+                  {
+                    maxCapacity: newMax,
+                    selectedCapacity: newSelected,
+                  },
+                  {
+                    where: { id: sizeQty.id },
+                    transaction,
+                  },
+                );
+
+                sizeQty.selectedCapacity = newSelected;
+              }
+            }
+          }
+
+          const currentDemand = (item.sizeQuantities || []).reduce(
+            (sum, sq) => sum + (sq.selectedCapacity || 0),
+            0,
+          );
+
+          if (currentDemand !== item.consumerDemand) {
+            didSyncAnything = true;
+            await this.pkgRepo.packageBrandItemsModel.update(
+              { consumerDemand: currentDemand },
+              {
+                where: { id: item.id },
+                transaction,
+              },
+            );
+          }
+
+          if (newVariantsAdded || sizesUpdated || demandsReduced || capacitiesDeleted) {
             summary.push({
               brandId: brand.brand_id,
               productId: item.product_id,
               newVariantsAdded,
               sizesUpdated,
+              demandsReduced,
+              capacitiesDeleted,
             });
           }
         }
@@ -3058,7 +3143,7 @@ export class OrdersService {
     } catch (err) {
       if (transaction) await transaction.rollback();
       console.error('❌ syncFullStock error:', err);
-
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException({
         success: false,
         message: AllMessages.SMTHG_WRNG || 'Something went wrong.',

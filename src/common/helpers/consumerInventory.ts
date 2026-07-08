@@ -4,6 +4,7 @@ import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
 import { ORDER_ITEMS } from '../constants/enum';
+import { AddInventoryCtoSHelper } from './create-inventory/add-inventory-cto-s.helper';
 
 @Injectable()
 export class ConsumerInventoryHelperService {
@@ -11,6 +12,7 @@ export class ConsumerInventoryHelperService {
     private readonly pkgRepo: PackageRepository,
     private readonly productRepo: ProductRepository,
     private readonly storeRepo: StoreRepository,
+    private readonly addInventoryCtoS: AddInventoryCtoSHelper,
   ) {}
 
   async consumerInventoryBackground(
@@ -20,9 +22,13 @@ export class ConsumerInventoryHelperService {
     pDate: string,
     storeId: any = '',
     token = '',
+    locationId = '',
   ) {
     try {
-      // 1️⃣ Fetch brands/items/sizes for this package
+      console.log(
+        `🚀 Starting ConsumerInventory for orderId=${orderId}, userId=${userId}, roleId=${roleId}, pDate=${pDate}, storeId=${storeId}`,
+      );
+
       const products = await this.pkgRepo.packageBrandModel.findAll({
         where: { package_id: orderId, selected: true },
         include: [
@@ -55,8 +61,9 @@ export class ConsumerInventoryHelperService {
         ],
       });
 
-      // 2️⃣ Get store details
-      const storeDetail = await this.pkgRepo.packageOrderModel.findOne({
+      console.log(`📦 Found ${products.length} brand(s) for package ${orderId}`);
+
+      const orderStoreDetail = await this.pkgRepo.packageOrderModel.findOne({
         where: { id: orderId },
         include: [
           {
@@ -67,44 +74,49 @@ export class ConsumerInventoryHelperService {
         ],
       });
 
-      if (storeId && (!Array.isArray(storeId) || storeId.length > 0)) {
-        await this.processStoreInventoryAPI(
+      console.log(
+        `🏬 Package store: ${orderStoreDetail?.store?.store_name || 'N/A'} (store_id=${orderStoreDetail?.store?.store_id || 'N/A'})`,
+      );
+
+      if (storeId) {
+        return await this.processStoreInventory(
           orderId,
           userId,
           roleId,
           pDate,
           storeId,
           products,
+          orderStoreDetail,
           token,
-        );
-      } else {
-        await this.processConsumerInventoryLocal(
-          orderId,
-          userId,
-          pDate,
-          products,
-          storeDetail,
+          locationId,
         );
       }
+
+      return await this.processConsumerInventory(
+        orderId,
+        userId,
+        pDate,
+        products,
+        orderStoreDetail,
+      );
     } catch (err) {
-      console.error('❌ Error in consumerInventoryBackground:', err);
+      console.error('❌ Error in ConsumerInventory:', err);
       throw err;
     }
   }
 
-  private async processConsumerInventoryLocal(
+  private async processConsumerInventory(
     orderId: number,
     userId: number,
     pDate: string,
     products: any[],
-    storeDetail: any,
+    orderStoreDetail: any,
   ) {
     const customerInventoryEntries: any[] = [];
     const consumerProductEntries: any[] = [];
     const variantEntries: any[] = [];
     const productIdMapping = new Map();
 
-    // Step 1️⃣ — Prepare Consumer Product Entries
     for (const brand of products) {
       for (const item of brand.items) {
         if (item.products) {
@@ -127,12 +139,9 @@ export class ConsumerInventoryHelperService {
     }
 
     if (consumerProductEntries.length > 0) {
-      await this.pkgRepo.consumerProductModel.bulkCreate(
-        consumerProductEntries,
-        {
-          ignoreDuplicates: true,
-        },
-      );
+      await this.pkgRepo.consumerProductModel.bulkCreate(consumerProductEntries, {
+        ignoreDuplicates: true,
+      });
 
       const allProducts = await this.pkgRepo.consumerProductModel.findAll({
         where: {
@@ -144,8 +153,9 @@ export class ConsumerInventoryHelperService {
         const entry = consumerProductEntries.find(
           (p: any) => p.skuNumber === product.skuNumber,
         );
-        if (entry)
+        if (entry) {
           productIdMapping.set(entry.originalProductId, product.product_id);
+        }
       });
 
       const consumerProductMappings = Array.from(productIdMapping.values()).map(
@@ -163,14 +173,11 @@ export class ConsumerInventoryHelperService {
       );
     }
 
-    // Step 2️⃣ — Create Consumer Variant & Inventory Entries
     for (const brand of products) {
       for (const item of brand.items) {
         if (!item.products) continue;
 
-        const consumerProductId = productIdMapping.get(
-          item.products.product_id,
-        );
+        const consumerProductId = productIdMapping.get(item.products.product_id);
         if (!consumerProductId) continue;
 
         for (const qty of item.sizeQuantities || []) {
@@ -178,7 +185,7 @@ export class ConsumerInventoryHelperService {
             size: qty.variant_size,
             price: item.price || 0,
             purchase_date: pDate,
-            purchase_from_vendor: storeDetail?.store?.store_name,
+            purchase_from_vendor: orderStoreDetail?.store?.store_name,
             package_id: orderId,
             original_quantity: qty.maxCapacity,
             selected_quantity: qty.selectedCapacity,
@@ -220,16 +227,20 @@ export class ConsumerInventoryHelperService {
         customerInventoryEntries as any,
       );
     }
+
+    return { success: true };
   }
 
-  private async processStoreInventoryAPI(
+  private async processStoreInventory(
     orderId: number,
     userId: number,
     roleId: number,
     pDate: string,
     storeId: any,
     products: any[],
+    orderStoreDetail: any,
     token: string,
+    locationId: string,
   ) {
     const inventoryPayloadMap = new Map();
 
@@ -241,17 +252,7 @@ export class ConsumerInventoryHelperService {
 
         if (!inventoryPayloadMap.has(sku)) {
           inventoryPayloadMap.set(sku, {
-            itemName: item.products.itemName,
-            image: item.products.image,
-            brand: item.products.brand,
-            color: item.products.color,
-            description: item.products.description || null,
-            category: item.products.category,
-            template: item.products.template,
-            templateRequired: false,
-            condition: null,
-            location: null,
-            status: null,
+            ...item.products.toJSON(),
             skuNumber: sku,
             variant: [],
           });
@@ -270,6 +271,7 @@ export class ConsumerInventoryHelperService {
             option2Value: null,
             status: '4',
             location: null,
+            location_id: locationId,
             price: item.price || 0,
             cost: '0',
             purchaseDate: pDate || null,
@@ -281,25 +283,8 @@ export class ConsumerInventoryHelperService {
 
     const inventoryPayload = Array.from(inventoryPayloadMap.values());
 
-    const response = await fetch(
-      'https://onesync-api-50c03c74d4bf.herokuapp.com/onesync.test/addInventories',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          Authorization: token,
-          roleId: String(roleId),
-          userId: String(userId),
-          storeId: String(storeId),
-        },
-        body: JSON.stringify(inventoryPayload),
-      },
-    );
+    await this.addInventoryCtoS.addInventoryCtoS(inventoryPayload, storeId, userId);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to process store inventory API: ${errorText}`);
-    }
+    return;
   }
 }

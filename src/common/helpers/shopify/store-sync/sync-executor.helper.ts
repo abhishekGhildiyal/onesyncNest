@@ -4,9 +4,9 @@
  * executeListingSync: create/update product, persist IDs, metafields, collections.
  * unlistFromShopify:   delete from Shopify and clear inventory.shopify_id.
  */
-import { isNormalStore, isUniqueGlobalInventory } from '../shopify-sync-utils';
-import { PersistShopifyVariantIdsHelper } from '../persist-shopify-variant-ids.helper';
 import { ShopifyService } from 'src/modules/shopify/shopify.service';
+import { PersistShopifyVariantIdsHelper } from '../persist-shopify-variant-ids.helper';
+import { isDualListingInventory } from '../shopify-sync-utils';
 
 export type ListingPass = { isWeb: boolean; label: string };
 
@@ -62,8 +62,7 @@ export async function executeListingSync({
   const shopifyProductId = result.product.id;
 
   // Web half of dual listing: no shopify_id on DB row (normal unique + item-level stores).
-  const virtualWebListing =
-    isWeb && isNormalStore(ctx.store) && isUniqueGlobalInventory(inventory);
+  const virtualWebListing = isWeb && isDualListingInventory(inventory, ctx.store);
 
   if (!virtualWebListing) {
     await inventory.update({
@@ -84,14 +83,23 @@ export async function executeListingSync({
   if (!skipMeta) {
     try {
       if (inventory.productList) {
-        await shopifyService.upsertStockXMetafields(shopifyProductId, inventory.productList);
+        const shouldSyncSizeLocale =
+          activeVariants.length > 0 &&
+          activeVariants.every((variant) => {
+            const condition = String(variant.option2Value || '')
+              .trim()
+              .toLowerCase();
+            return !condition || condition === 'new';
+          });
+
+        await shopifyService.upsertStockXMetafields(shopifyProductId, inventory.productList, {
+          syncSizeLocale: shouldSyncSizeLocale,
+        });
       }
 
       const shopifyVariants = result.product.variants || [];
       for (const av of activeVariants) {
-        const sv = shopifyVariants.find(
-          (s: any) => s.sku === inventory.skuNumber && s.option1 === av.option1Value,
-        );
+        const sv = shopifyVariants.find((s: any) => s.sku === inventory.skuNumber && s.option1 === av.option1Value);
         if (sv) await shopifyService.upsertVariantMetafields(sv.id, av);
       }
 
@@ -131,9 +139,7 @@ export async function unlistFromShopify({
 }) {
   if (!idsToDelete.length) return;
 
-  console.log(
-    `[store-sync] product ${productId}: unlisting ${idsToDelete.join(', ')} (inventory ${inventory.id})`,
-  );
+  console.log(`[store-sync] product ${productId}: unlisting ${idsToDelete.join(', ')} (inventory ${inventory.id})`);
   await ctx.shopifyService.deleteItems(idsToDelete, productId);
   await inventory.update({ shopifyId: null, shopifyStatus: 'Unlisted' });
 }

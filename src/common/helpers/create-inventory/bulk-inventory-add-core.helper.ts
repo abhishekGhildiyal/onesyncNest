@@ -13,7 +13,7 @@ import { InventoryActivityLogHelper } from '../update-inventory/inventory-activi
 import { InventoryUpdateParityHelper } from '../update-inventory/inventory-update-parity.helper';
 import { CloudinaryService } from './cloudinary.service';
 import { BulkInventoryAddParityHelper, LABEL_STATUS } from './bulk-inventory-add-parity.helper';
-import { resolveStoreSyncType } from 'src/common/helpers/shopify/shopify-sync-utils';
+import { isItemLevelStore, resolveStoreSyncType } from 'src/common/helpers/shopify/shopify-sync-utils';
 
 const skuLocks = new Map<string, Promise<void>>();
 
@@ -305,7 +305,7 @@ export class BulkInventoryAddCoreHelper {
         const inventoryOwnerId =
           inv._resolvedConsignerUser?.id || inv.ownerData?.id || inv.consignerUser?.id || userId;
 
-        if (!existingCatalogWebInventory && hasLinkedVariants) {
+        if (!existingCatalogWebInventory && hasLinkedVariants && !isItemLevelStore(store)) {
           webInventoriesToCreate.push({
             accountType: 1,
             brand: inv.brand,

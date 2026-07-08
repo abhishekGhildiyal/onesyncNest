@@ -1,5 +1,6 @@
-import { resolveStoreSyncType, StoreSyncType } from '../shopify-sync-utils';
+import { isItemLevelStore, resolveStoreSyncType, StoreSyncType } from '../shopify-sync-utils';
 import { syncNormalStore, resolveDbEntries as resolveNormalDbEntries } from './normal-store.sync';
+import { syncItemLevelStore, resolveDbEntries as resolveItemLevelDbEntries } from './item-level-store.sync';
 import { syncWebOnlyStore, resolveDbEntries as resolveWebOnlyDbEntries } from './web-only-store.sync';
 import { syncUsedOnlyStore, resolveDbEntries as resolveUsedOnlyDbEntries } from './used-only-store.sync';
 import { StoreSyncContext, DbEntrySelectionContext } from './sync-executor.helper';
@@ -7,6 +8,9 @@ import { StoreSyncContext, DbEntrySelectionContext } from './sync-executor.helpe
 export type { StoreSyncContext, DbEntrySelectionContext, ListingPass } from './sync-executor.helper';
 
 export function resolveDbEntriesForStore(ctx: DbEntrySelectionContext) {
+  if (isItemLevelStore(ctx.store)) {
+    return resolveItemLevelDbEntries(ctx);
+  }
   switch (resolveStoreSyncType(ctx.store)) {
     case StoreSyncType.WEB_ONLY:
       return resolveWebOnlyDbEntries(ctx);
@@ -18,6 +22,9 @@ export function resolveDbEntriesForStore(ctx: DbEntrySelectionContext) {
 }
 
 export async function runStoreSync(ctx: StoreSyncContext) {
+  if (isItemLevelStore(ctx.store)) {
+    return syncItemLevelStore(ctx);
+  }
   switch (resolveStoreSyncType(ctx.store)) {
     case StoreSyncType.WEB_ONLY:
       return syncWebOnlyStore(ctx);

@@ -1,8 +1,8 @@
 import { Logger, ValidationPipe, BadRequestException } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as express from 'express';
 import { AppModule } from './app.module';
+import { setupSwagger } from './common/config/swagger.config';
 import { ExpressResponseFilter } from './common/filters/express-response.filter';
 import { UnhandledExceptionFilter } from './common/filters/unhandled-exception.filter';
 
@@ -48,13 +48,7 @@ async function bootstrap() {
   app.useGlobalFilters(new UnhandledExceptionFilter(), new ExpressResponseFilter());
   app.setGlobalPrefix('v1');
 
-  const config = new DocumentBuilder()
-    .setTitle('OneSync API')
-    .setDescription('The OneSync API description')
-    .setVersion('1.0')
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  setupSwagger(app);
 
   app.enableCors({
     origin: '*',

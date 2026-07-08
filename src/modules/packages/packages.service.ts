@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 // import { Op } from 'sequelize';
 import type { getUser } from 'src/common/interfaces/common/getUser';
-import { PACKAGE_STATUS, PAYMENT_STATUS } from '../../common/constants/enum';
+import { ORDER_ITEMS, PACKAGE_STATUS, PAYMENT_STATUS } from '../../common/constants/enum';
 import { AllMessages } from '../../common/constants/messages';
 import { generateAlphaNumericPassword, hashPasswordMD5 } from '../../common/helpers/hash.helper';
 import { generateOrderId } from '../../common/helpers/order-generator.helper';
@@ -14,9 +14,9 @@ import { PackageRepository } from 'src/db/repository/package.repository';
 import { ProductRepository } from 'src/db/repository/product.repository';
 import { StoreRepository } from 'src/db/repository/store.repository';
 import { UserRepository } from 'src/db/repository/user.repository';
-import { SocketGateway } from '../socket/socket.gateway';
-import { MailService } from '../mail/mail.service';
 import { TemplatesSlug } from '../mail/mail.constants';
+import { MailService } from '../mail/mail.service';
+import { SocketGateway } from '../socket/socket.gateway';
 import * as DTO from './dto/packages.dto';
 
 @Injectable()
@@ -111,7 +111,7 @@ export class PackagesService {
       await t.commit();
 
       // 🧩 Realtime notify clients (optional)
-      this.socketGateway.server.emit(`submitted-${packageOrderId}`, {});
+      this.socketGateway.server.emit(`submitted-${packageOrderId}`);
 
       return { success: true, message: AllMessages.PYMT_SUCCSS };
     } catch (err) {
@@ -193,7 +193,7 @@ export class PackagesService {
       });
     const t = await this.pkgRepo.packageOrderModel.sequelize.transaction();
     try {
-      const { packageOrderId, shipmentDetails = [], localPickup = false } = body;
+      const { packageOrderId, shipmentDetails = [], localPickup = false, shippingCost, handlingCost } = body;
       const order = await this.pkgRepo.packageOrderModel.findByPk(packageOrderId, {
         transaction: t,
       });
@@ -207,6 +207,7 @@ export class PackagesService {
       }
 
       if (order.status !== PACKAGE_STATUS.IN_PROGRESS) {
+        await t.rollback();
         throw new BadRequestException({
           message: 'Order is not ready for shipment. Store confirmation needed.',
           success: false,
@@ -218,10 +219,16 @@ export class PackagesService {
       }
 
       if (order.employee_id !== user.userId) {
+        await t.rollback();
         throw new BadRequestException({
           message: 'You are not authorized to add shipment for this package.',
           success: false,
         });
+      }
+
+      if (shippingCost || handlingCost) {
+        order.shipping_cost = shippingCost || null;
+        order.handling_cost = handlingCost || null;
       }
 
       await order.save({ transaction: t });
@@ -242,26 +249,34 @@ export class PackagesService {
           },
           { transaction: t },
         );
-      } else {
-        if (shipmentDetails.length === 0) {
-          throw new BadRequestException({
-            message: AllMessages.NO_SHIPMENT_DETAILS,
-            success: false,
-          });
-        }
 
-        const shipmentRecords = shipmentDetails.map((shipment: any) => ({
-          package_id: packageOrderId,
-          shipment_date: shipment.shipment_date,
-          shipping_carrier: shipment.shipping_carrier,
-          tracking_number: shipment.tracking_number,
-          localPickup: false,
-        }));
+        order.shipmentStatus = true;
+        await order.save({ transaction: t });
+        await t.commit();
 
-        await this.pkgRepo.packageShipmentModel.bulkCreate(shipmentRecords, {
-          transaction: t,
+        this.socketGateway.server.emit(`submitted-${packageOrderId}`);
+        return { success: true, message: AllMessages.SHP_DTL };
+      }
+
+      if (shipmentDetails.length === 0) {
+        await t.rollback();
+        throw new BadRequestException({
+          message: AllMessages.NO_SHIPMENT_DETAILS,
+          success: false,
         });
       }
+
+      const shipmentRecords = shipmentDetails.map((shipment: any) => ({
+        package_id: packageOrderId,
+        shipment_date: shipment.shipment_date,
+        shipping_carrier: shipment.shipping_carrier,
+        tracking_number: shipment.tracking_number,
+        localPickup: false,
+      }));
+
+      await this.pkgRepo.packageShipmentModel.bulkCreate(shipmentRecords, {
+        transaction: t,
+      });
 
       order.shipmentStatus = true;
       await order.save({ transaction: t });
@@ -271,6 +286,7 @@ export class PackagesService {
       return { success: true, message: AllMessages.SHP_DTL };
     } catch (err) {
       await t.rollback();
+      console.error('❌ order Shipment error:', err);
       throw err instanceof BadRequestException ? err : new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
@@ -280,10 +296,25 @@ export class PackagesService {
    */
   async shipmentDetail(orderId: number) {
     try {
+      const order = await this.pkgRepo.packageOrderModel.findOne({
+        where: { id: orderId },
+        attributes: ['handling_cost', 'shipping_cost'],
+      });
+
       const list = await this.pkgRepo.packageShipmentModel.findAll({
         where: { package_id: orderId },
+        attributes: {
+          exclude: ['createdAt', 'updatedAt'],
+        },
       });
-      return { success: true, data: list };
+
+      return {
+        success: true,
+        data: {
+          order,
+          list,
+        },
+      };
     } catch (err) {
       throw new BadRequestException({
         message: AllMessages.SMTHG_WRNG,
@@ -405,13 +436,14 @@ export class PackagesService {
         });
       }
 
-      (orderItem as any).isItemReceived = 1; // Assuming 1 for RECEIVED based on ORDER_ITEMS.ITM_RECEIVED
+      (orderItem as any).isItemReceived = ORDER_ITEMS.ITM_RECEIVED;
       await orderItem.save({ transaction: t });
       await t.commit();
 
       return { success: true, message: AllMessages.ITM_RECVD };
     } catch (err) {
       if (t) await t.rollback();
+      console.error('❌ itemReceived:', err);
       throw new BadRequestException({
         message: AllMessages.SMTHG_WRNG,
         success: false,
@@ -430,24 +462,34 @@ export class PackagesService {
       });
     const t = await this.pkgRepo.packageOrderModel.sequelize.transaction();
     try {
-      const { paymentId, packageOrderId } = body;
+      const { paymentId } = body;
+      const payment = await this.pkgRepo.packagePaymentModel.findByPk(paymentId, {
+        transaction: t,
+      });
+      if (!payment) {
+        await t.rollback();
+        throw new BadRequestException({
+          success: false,
+          message: 'Payment removed successfully',
+        });
+      }
+
       await this.pkgRepo.packagePaymentModel.destroy({
         where: { id: paymentId },
         transaction: t,
       });
 
-      const order = await this.pkgRepo.packageOrderModel.findByPk(packageOrderId, {
-        transaction: t,
-      });
-      if (order) {
-        order.paymentStatus = PAYMENT_STATUS.PENDING;
-        await order.save({ transaction: t });
-      }
+      await this.pkgRepo.packageOrderModel.update(
+        { paymentStatus: PAYMENT_STATUS.PENDING },
+        { where: { id: payment.package_id }, transaction: t },
+      );
 
       await t.commit();
-      return { success: true, message: 'Payment removed successfully.' };
+      return { success: true, message: AllMessages.PMT_DLT };
     } catch (err) {
       await t.rollback();
+      console.error('❌ order remove Payment error:', err);
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException({
         message: AllMessages.SMTHG_WRNG,
         success: false,
@@ -617,7 +659,7 @@ export class PackagesService {
 
       // Step 2: Update brand items to mark them as received.
       await this.pkgRepo.packageBrandItemsModel.update(
-        { isItemReceived: 1 }, // ORDER_ITEMS.ITM_RECEIVED
+        { isItemReceived: ORDER_ITEMS.ITM_RECEIVED },
         { where: { id: { [Op.in]: itemIds } }, transaction: t },
       );
 
@@ -647,13 +689,14 @@ export class PackagesService {
       }
 
       await t.commit();
-      if (order?.store_id) {
+      if (packageOrderId && order?.store_id) {
         this.socketGateway.server.emit(`updateQty-${order.store_id}-${packageOrderId}`);
       }
 
       return { success: true, message: AllMessages.ALL_ITM_RCVD };
     } catch (err) {
       if (t) await t.rollback();
+      console.error('❌ markAll:', err);
       throw err instanceof BadRequestException ? err : new BadRequestException(AllMessages.SMTHG_WRNG);
     }
   }
@@ -805,18 +848,20 @@ export class PackagesService {
       });
     const t = await this.pkgRepo.packageOrderModel.sequelize.transaction();
     try {
-      const pkgOrder = await this.pkgRepo.packageOrderModel.findByPk(orderId);
+      const pkgOrder = await this.pkgRepo.packageOrderModel.findOne({
+        where: { id: orderId },
+      });
       if (!pkgOrder) {
         await t.rollback();
-        throw new BadRequestException({
-          message: AllMessages.PAKG_NF,
+        throw new NotFoundException({
           success: false,
+          message: AllMessages.PAKG_NF,
         });
       }
 
       if (pkgOrder.status === PACKAGE_STATUS.COMPLETED) {
         await t.rollback();
-        return { success: true, message: 'Package is already completed.' };
+        return { success: true, message: 'Package is already marked as completed.' };
       }
 
       pkgOrder.status = PACKAGE_STATUS.COMPLETED;
@@ -830,7 +875,7 @@ export class PackagesService {
       this.socketGateway.server.emit(`statusChanged-${user.userId}`);
 
       // 🔥 Background task for Consumer Inventory
-      const { pDate, storeId = '' } = body;
+      const { pDate, storeId = '', locationId = '' } = body;
       setImmediate(async () => {
         try {
           await this.ConsumerInventoryHelper.consumerInventoryBackground(
@@ -840,17 +885,23 @@ export class PackagesService {
             pDate,
             storeId,
             user.token,
+            locationId,
           );
-          console.log(`✅ ConsumerInventory processed for order ${orderId}`);
+          console.log(`ConsumerInventory processed for order ${orderId}`);
         } catch (err) {
-          console.error('❌ Background ConsumerInventory failed:', err);
+          console.error('Background ConsumerInventory failed:', err);
         }
       });
 
       return { success: true, message: AllMessages.PKG_CMPLTD };
     } catch (err) {
-      if (t) await t.rollback();
-      throw err instanceof BadRequestException ? err : new BadRequestException(AllMessages.SMTHG_WRNG);
+      await t.rollback();
+      console.error('❌ completePkg error:', err);
+      if (err instanceof NotFoundException || err instanceof BadRequestException) throw err;
+      throw new BadRequestException({
+        success: false,
+        message: AllMessages.SMTHG_WRNG,
+      });
     }
   }
 

@@ -5,9 +5,8 @@
 import {
   coerceStoreFlag,
   isActiveVariant,
+  isDualListingInventory,
   isLinkedImageFlag,
-  isNormalStore,
-  isUniqueGlobalInventory,
   resolveIsWebSync,
 } from 'src/common/helpers/shopify/shopify-sync-utils';
 
@@ -39,7 +38,7 @@ export function resolveShopifyHandle(
     return sanitizeHandle(`${base}-p${pricePart}-s${sizePart}`) || `${base}-p${pricePart}-s${sizePart}`;
   }
 
-  const dualListing = isNormalStore(store) && isUniqueGlobalInventory(inventory);
+  const dualListing = isDualListingInventory(inventory, store);
 
   if (dualListing) {
     const suffix = options.isWeb ? 'web' : 'pos';
@@ -85,7 +84,7 @@ export function buildShopifyPayload(
   } = {},
 ) {
   const rows = options.allInventories ?? [];
-  const dualListing = isNormalStore(store) && isUniqueGlobalInventory(inventory);
+  const dualListing = isDualListingInventory(inventory, store);
 
   const isWeb = options.isWeb ?? resolveIsWebSync(inventory, store);
   const auctionEnabled = coerceStoreFlag(inventory?.auctionEnabled ?? inventory?.auction_enabled);

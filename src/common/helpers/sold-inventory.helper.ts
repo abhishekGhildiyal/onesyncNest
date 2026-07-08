@@ -8,6 +8,8 @@ import { StoreRepository } from 'src/db/repository/store.repository';
 import { buildShopifyPayload } from 'src/modules/shopify/shopify.helper';
 import { ShopifyServiceFactory } from '../../modules/shopify/shopify.service';
 import { PersistShopifyVariantIdsHelper } from './shopify/persist-shopify-variant-ids.helper';
+import { isItemLevelStore, isNormalStore } from './shopify/shopify-sync-utils';
+import { UniqueProductStoreShopifyHelper } from './shopify/unique-product-store-shopify.helper';
 import { ReducePackageQuantity } from './reduce-package-qty.helper';
 
 @Injectable()
@@ -20,6 +22,7 @@ export class MarkInventorySold {
     private readonly ReducePkgQtyHelper: ReducePackageQuantity,
     private readonly shopifyFactory: ShopifyServiceFactory,
     private readonly persistVariantIds: PersistShopifyVariantIdsHelper,
+    private readonly uniqueProduct: UniqueProductStoreShopifyHelper,
   ) {}
 
   markSoldInventory = async (
@@ -360,7 +363,7 @@ export class MarkInventorySold {
     }
   };
 
-  /** Sync web-scope inventories for a list of product IDs (background-safe). */
+  /** Sync catalog web inventories for normal stores (linked globals only — not unique items). */
   async syncWebInventories(data: {
     productIds: number[];
     store: any;
@@ -378,6 +381,13 @@ export class MarkInventorySold {
         return;
       }
 
+      if (isItemLevelStore(store) || !isNormalStore(store)) {
+        console.log(
+          `ℹ️ [syncWebInventories] Skipped — ${isItemLevelStore(store) ? 'item-level' : 'non-normal'} store uses main store sync`,
+        );
+        return;
+      }
+
       console.log(`🚀 [syncWebInventories] Starting sync for product IDs: ${productIds}`);
 
       const webInventories = await this.productRepo.inventoryModel.findAll({
@@ -385,6 +395,7 @@ export class MarkInventorySold {
           productId: productIds,
           publishedScope: 'web',
           storeId: store.store_id,
+          linkedImage: false,
         },
         include: [
           {
@@ -401,8 +412,43 @@ export class MarkInventorySold {
       });
 
       if (!webInventories.length) {
-        console.log('⚠️ [syncWebInventories] No web-scope items found.');
+        console.log('⚠️ [syncWebInventories] No catalog web items found.');
         return;
+      }
+
+      const allActiveInventories = await this.productRepo.inventoryModel.findAll({
+        where: {
+          productId: productIds,
+          storeId: store.store_id,
+          soldOn: null,
+          isVisible: true,
+        },
+        include: [{ model: this.productRepo.variantModel, as: 'variants' }],
+        transaction,
+      });
+
+      const inventoriesByProduct = new Map<number, any[]>();
+      for (const inv of allActiveInventories) {
+        const list = inventoriesByProduct.get(inv.productId) || [];
+        list.push(inv);
+        inventoriesByProduct.set(inv.productId, list);
+      }
+
+      const productActiveVariants = await this.productRepo.variantModel.findAll({
+        where: {
+          productId: productIds,
+          store_id: store.store_id,
+          status: 1,
+          quantity: { [Op.gt]: 0 },
+        },
+        transaction,
+      });
+
+      const variantsByProduct = new Map<number, any[]>();
+      for (const variant of productActiveVariants) {
+        const list = variantsByProduct.get(variant.productId) || [];
+        list.push(variant);
+        variantsByProduct.set(variant.productId, list);
       }
 
       const shopifyService = this.shopifyFactory.createService(store, { useGraphql: true });
@@ -417,20 +463,16 @@ export class MarkInventorySold {
             continue;
           }
 
-          const activeVariants = await this.productRepo.variantModel.findAll({
-            where: {
-              productId: inventory.productId,
-              store_id: store.store_id,
-              status: 1,
-              quantity: { [Op.gt]: 0 },
-            },
-            transaction,
+          const allInventories = inventoriesByProduct.get(inventory.productId) || [];
+          const variants = this.uniqueProduct.getVariantsForSync(inventory, store, {
+            productVariants: variantsByProduct.get(inventory.productId) || [],
+            allInventories,
           });
 
-          if (activeVariants.length === 0) {
+          if (!variants.length) {
             if (inventory.shopifyId) {
               console.log(
-                `🧹 [syncWebInventories] Deleting Shopify product ${inventory.shopifyId} (no active variants)`,
+                `🧹 [syncWebInventories] Deleting Shopify product ${inventory.shopifyId} (no linked variants)`,
               );
               await shopifyService.deleteItems([inventory.shopifyId], inventory.productId);
               await inventory.update({ shopifyId: null, shopifyStatus: null }, { transaction });
@@ -438,19 +480,18 @@ export class MarkInventorySold {
             continue;
           }
 
-          if (inventory.shopifyId) {
-            console.log(`ℹ️ [syncWebInventories] Skipping already synced inventory: ${inventory.id}`);
-            continue;
-          }
-
-          console.log(`🌐 [syncWebInventories] SYNCING NEW PRODUCT → inventoryId=${inventory.id}`);
+          const action = inventory.shopifyId ? 'UPDATING' : 'SYNCING NEW';
+          console.log(`🌐 [syncWebInventories] ${action} catalog web product → inventoryId=${inventory.id}`);
 
           let template: any = null;
           if (inventory.category) {
             template = await this.productRepo.templateModel.findByPk(inventory.category, { transaction });
           }
 
-          const payload = buildShopifyPayload(inventory, activeVariants, store, template);
+          const payload = buildShopifyPayload(inventory, variants, store, template, {
+            allInventories,
+            isWeb: true,
+          });
           const result = await shopifyService.syncProduct(payload);
 
           if (result?.product?.id) {
@@ -464,7 +505,7 @@ export class MarkInventorySold {
 
             await this.persistVariantIds.persistShopifyVariantIds({
               shopifyResult: result,
-              localVariants: activeVariants,
+              localVariants: variants,
               isWeb: true,
               transaction,
             });

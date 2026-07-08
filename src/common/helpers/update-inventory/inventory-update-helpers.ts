@@ -194,3 +194,25 @@ export const resolveShopifyAction = ({
 
   return SHOPIFY_ACTION.NONE;
 };
+
+/** Coerce legacy/null DB values before Sequelize save (payout is NOT NULL in DB). */
+export const normalizeVariantNotNullDefaults = (variant: { get: (k: string) => unknown; set: (k: string, v: unknown) => void }) => {
+  if (variant.get('payout') == null) variant.set('payout', 0);
+  const payoutManual = variant.get('payoutManual') ?? variant.get('payout_manual');
+  if (payoutManual == null) variant.set('payoutManual', '0');
+};
+
+export const formatUpdateError = (err: {
+  name?: string;
+  message?: string;
+  errors?: { path?: string; message?: string }[];
+}) => {
+  if (err?.name === 'SequelizeValidationError' || err?.name === 'ValidationError') {
+    const details = err.errors
+      ?.map((e) => `${e.path || 'field'}: ${e.message}`)
+      .filter(Boolean)
+      .join('; ');
+    return details || err.message || 'Validation error';
+  }
+  return err?.message || 'Update failed';
+};

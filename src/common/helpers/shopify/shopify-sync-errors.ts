@@ -7,6 +7,12 @@ export function isNotFoundError(err: unknown): boolean {
   return /\bnot found\b/i.test(msg) && !/throttl/i.test(msg);
 }
 
+/** Create rejected because the handle is already taken — existing listing should be updated. */
+export function isHandleInUseError(err: unknown): boolean {
+  const msg = String((err as { message?: string })?.message || err || '').toLowerCase();
+  return /handle.*already in use|already in use.*handle|handle has already been taken/.test(msg);
+}
+
 /** Worth re-queuing: throttle, server errors, transient network — not 404/validation. */
 export function isRetryableShopifySyncError(err: unknown): boolean {
   if (!err) return false;

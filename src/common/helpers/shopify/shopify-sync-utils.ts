@@ -21,9 +21,22 @@ export function isUniqueProductStore(store: { is_unique_product_store?: boolean 
   return coerceStoreFlag(store?.is_unique_product_store);
 }
 
-/** Reserved — NOT is_unique_product_store (Java parity). */
-export function isItemLevelStore() {
-  return false;
+/** Item-level store — every global row gets its own web + POS listing (no catalog grouping). */
+export function isItemLevelStore(store: { is_unique_product_store?: boolean } | null | undefined) {
+  return isUniqueProductStore(store);
+}
+
+/** POS + web are separate Shopify products (unique globals on normal stores; all globals on item-level). */
+export function isDualListingInventory(
+  inventory: { publishedScope?: string; linkedImage?: unknown } | null | undefined,
+  store: {
+    is_unique_product_store?: boolean;
+    is_web_store?: boolean;
+    is_used_only_products_store?: boolean;
+  } | null | undefined,
+) {
+  if (isItemLevelStore(store) && inventory?.publishedScope === 'global') return true;
+  return isNormalStore(store) && isUniqueGlobalInventory(inventory);
 }
 
 export const StoreSyncType = {

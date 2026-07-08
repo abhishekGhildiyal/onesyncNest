@@ -7,6 +7,9 @@ import { UserRepository } from 'src/db/repository/user.repository';
 import {
   getInventoryAuditChanges,
   normalizeAuditPurchaseDate,
+  normalizeAuditSoldOn,
+  isSamePurchaseDateValue,
+  isSameSoldOnValue,
   STATUS_LABELS,
 } from './inventory-audit-diff';
 
@@ -140,6 +143,7 @@ export class InventoryActivityLogHelper {
     oldCustomFields,
     newCustomFields,
     variantIncoming,
+    inventoryIncoming,
     transaction,
   }: {
     oldInv: Record<string, unknown>;
@@ -149,6 +153,7 @@ export class InventoryActivityLogHelper {
     oldCustomFields: unknown[];
     newCustomFields: unknown[];
     variantIncoming: Record<string, unknown>;
+    inventoryIncoming?: Record<string, unknown>;
     transaction?: Transaction;
   }) {
     const [oldStoreLocationName, newStoreLocationName, oldChannelDisplayName, newChannelDisplayName] =
@@ -198,6 +203,29 @@ export class InventoryActivityLogHelper {
       );
       if (!existingPurchaseDateKey) {
         changes['Purchase Date'] = { old: oldPurchaseDate, new: newPurchaseDate };
+      }
+    }
+
+    const oldSoldOn = normalizeAuditSoldOn(oldInv?.soldOn ?? oldInv?.sold_on);
+    let newSoldOn = normalizeAuditSoldOn(newInv?.soldOn ?? newInv?.sold_on);
+
+    if (inventoryIncoming?.soldOn !== undefined) {
+      const intendedSoldOn =
+        inventoryIncoming.soldOn == null || inventoryIncoming.soldOn === ''
+          ? null
+          : normalizeAuditSoldOn(inventoryIncoming.soldOn);
+
+      if (!isSameSoldOnValue(oldSoldOn, intendedSoldOn)) {
+        newSoldOn = intendedSoldOn;
+      }
+    }
+
+    if (!isSameSoldOnValue(oldSoldOn, newSoldOn)) {
+      const existingSoldDateKey = Object.keys(changes).find(
+        (key) => key.toLowerCase().replace(/\s+/g, '') === 'solddate',
+      );
+      if (!existingSoldDateKey) {
+        changes['Sold Date'] = { old: oldSoldOn, new: newSoldOn };
       }
     }
 
@@ -273,6 +301,7 @@ export class InventoryActivityLogHelper {
     oldCustomFields: unknown[];
     newCustomFields: unknown[];
     variantIncoming: Record<string, unknown>;
+    inventoryIncoming?: Record<string, unknown>;
     flow?: string;
     transferId?: number | null;
     transaction?: Transaction;
@@ -287,6 +316,7 @@ export class InventoryActivityLogHelper {
       oldCustomFields,
       newCustomFields,
       variantIncoming,
+      inventoryIncoming,
       flow = 'UPDATE',
       transferId = null,
       transaction,
@@ -300,6 +330,7 @@ export class InventoryActivityLogHelper {
       oldCustomFields,
       newCustomFields,
       variantIncoming,
+      inventoryIncoming,
       transaction,
     });
 

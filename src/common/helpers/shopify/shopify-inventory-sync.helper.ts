@@ -9,6 +9,7 @@ import { ShopifyServiceFactory } from 'src/modules/shopify/shopify.service';
 import { PersistShopifyVariantIdsHelper } from './persist-shopify-variant-ids.helper';
 import { runStoreSync } from './store-sync';
 import { UniqueProductStoreShopifyHelper } from './unique-product-store-shopify.helper';
+import { MarkInventorySold } from '../sold-inventory.helper';
 
 const BULK_ITEM_THRESHOLD = 10;
 const BULK_RETRY_DELAY_MS = 15000;
@@ -24,6 +25,7 @@ export class ShopifyInventorySyncHelper {
     private readonly persistVariantIds: PersistShopifyVariantIdsHelper,
     private readonly shopifyQueue: ShopifySyncQueueService,
     private readonly redis: RedisService,
+    private readonly markSold: MarkInventorySold,
   ) {}
 
   private async scheduleSyncRetry(
@@ -65,6 +67,7 @@ export class ShopifyInventorySyncHelper {
       bulkSync?: boolean;
       forceResync?: boolean;
       inventoryIds?: number[];
+      skipLinkedWebReconcile?: boolean;
     } = {},
   ) {
     const useGraphql = options.useGraphql !== false;
@@ -174,6 +177,10 @@ export class ShopifyInventorySyncHelper {
       console.log(
         `[shopifyInventorySync] product ${productId}: done — ${syncedCount}/${itemsToSyncCount} synced${failedCount > 0 ? `, ${failedCount} failed` : ''}`,
       );
+
+      if (!options.skipLinkedWebReconcile) {
+        await this.markSold.syncWebInventories({ productIds: [productId], store });
+      }
     } catch (err) {
       console.error(`❌ Fatal error in Shopify sync for product ${productId}:`, err);
       throw err;
@@ -189,11 +196,12 @@ export class ShopifyInventorySyncHelper {
       forceResync?: boolean;
       inventoryIds?: number[];
       fromQueue?: boolean;
+      skipLinkedWebReconcile?: boolean;
     } = {},
   ) {
     const redisClient = this.redis.getClient();
     if (!redisClient) {
-      return this.doSync(productId, storeId, { ...options, useGraphql: options.useGraphql !== false });
+      throw new Error('Redis unavailable — Shopify sync lock required');
     }
 
     const lockKey = `shopify_sync_lock:${productId}:${storeId}`;

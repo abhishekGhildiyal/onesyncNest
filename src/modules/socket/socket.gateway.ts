@@ -1,6 +1,7 @@
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
@@ -16,10 +17,16 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server: Server;
 
   handleConnection(socket: Socket) {
-    console.log('🐯 User connected:', socket.id, '🐯');
+    console.log('🟢 User connected:', socket.id);
   }
 
   handleDisconnect(socket: Socket) {
-    console.log('🚨 User disconnected:', socket.id);
+    console.log('🔴 User disconnected:', socket.id);
+  }
+
+  @SubscribeMessage('itemUpdated')
+  handleItemUpdated(socket: Socket, data: unknown) {
+    console.log('🔔 Item update received:', data);
+    // socket.broadcast.emit('itemUpdated', data); — same as Express (broadcast commented out)
   }
 }
